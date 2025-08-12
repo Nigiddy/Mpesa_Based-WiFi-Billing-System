@@ -61,7 +61,13 @@ DATABASE_URL=mysql://user:password@localhost/dbname
 `node index.js`
 
 ### Start the frontend
-`npm run dev`
+From the `Frontend/` folder:
+```
+cp .env.local.example .env.local # if provided, otherwise create manually
+echo NEXT_PUBLIC_API_URL=http://localhost:5000 > .env.local
+npm install
+npm run dev
+```
 
 
 

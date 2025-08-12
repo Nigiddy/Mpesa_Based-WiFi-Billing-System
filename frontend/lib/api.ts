@@ -112,8 +112,10 @@ class ApiClient {
   }
 
   async getPaymentHistory(phone: string): Promise<ApiResponse<Transaction[]>> {
-    // Not implemented on backend
-    return { success: false, error: "Not implemented" }
+    // Optional: can be implemented later via /api/transactions?search=phone
+    const resp = await this.getTransactions({ search: phone, limit: 100 })
+    if (!resp.success || !resp.data) return { success: false, error: resp.error }
+    return { success: true, data: resp.data.transactions }
   }
 
   // User Management APIs
@@ -123,52 +125,12 @@ class ApiClient {
     page?: number
     limit?: number
   }): Promise<ApiResponse<{ users: User[]; total: number; page: number; totalPages: number }>> {
-    // Derive users from admin payments list
-    const paymentsResp = await this.request<Array<{ phone: string; amount: number; time_purchased: string; status: string }>>(
-      "/api/admin/payments"
-    )
-    if (!paymentsResp.success || !paymentsResp.data) {
-      return { success: false, error: paymentsResp.error || "Failed to load payments" }
-    }
-    // Aggregate by phone
-    const phoneToAgg = new Map<string, User>()
-    for (const p of paymentsResp.data) {
-      const existing = phoneToAgg.get(p.phone)
-      const updated: User = existing || {
-        id: phoneToAgg.size + 1,
-        phone: p.phone,
-        macAddress: "",
-        status: p.status === "confirmed" ? "active" : "expired",
-        currentPackage: undefined,
-        expiresAt: undefined,
-        totalSpent: 0,
-        sessionsCount: 0,
-        lastSeen: p.time_purchased,
-      }
-      updated.totalSpent += Number(p.amount) || 0
-      updated.sessionsCount += 1
-      updated.status = updated.status === "active" || p.status === "confirmed" ? "active" : "expired"
-      if (new Date(p.time_purchased) > new Date(updated.lastSeen)) {
-        updated.lastSeen = p.time_purchased
-      }
-      phoneToAgg.set(p.phone, updated)
-    }
-    let users = Array.from(phoneToAgg.values())
-    // Filters
-    if (params?.search) {
-      const q = params.search.toLowerCase()
-      users = users.filter((u) => u.phone.toLowerCase().includes(q))
-    }
-    if (params?.status && params.status !== "all") {
-      users = users.filter((u) => u.status === params.status)
-    }
-    // Pagination
-    const page = params?.page || 1
-    const limit = params?.limit || 10
-    const total = users.length
-    const totalPages = Math.max(1, Math.ceil(total / limit))
-    const paged = users.slice((page - 1) * limit, page * limit)
-    return { success: true, data: { users: paged, total, page, totalPages } }
+    const queryParams = new URLSearchParams()
+    if (params?.search) queryParams.append("search", params.search)
+    if (params?.status && params.status !== "all") queryParams.append("status", params.status)
+    if (params?.page) queryParams.append("page", params.page.toString())
+    if (params?.limit) queryParams.append("limit", params.limit.toString())
+    return this.request(`/api/users?${queryParams.toString()}`)
   }
 
   async getUserDetails(userId: number): Promise<ApiResponse<User & { transactions: Transaction[] }>> {
@@ -200,45 +162,22 @@ class ApiClient {
     startDate?: string
     endDate?: string
   }): Promise<ApiResponse<{ transactions: Transaction[]; total: number; page: number; totalPages: number }>> {
-    const paymentsResp = await this.request<Array<{ phone: string; amount: number; time_purchased: string; status: string }>>(
-      "/api/admin/payments"
-    )
-    if (!paymentsResp.success || !paymentsResp.data) {
-      return { success: false, error: paymentsResp.error || "Failed to load payments" }
-    }
-    let transactions: Transaction[] = paymentsResp.data.map((p, idx) => ({
-      id: `${p.phone}-${new Date(p.time_purchased).getTime()}-${idx}`,
-      phone: p.phone,
-      amount: Number(p.amount) || 0,
-      package: "",
-      status: (p.status as Transaction["status"]) || "pending",
-      timestamp: p.time_purchased,
-      mpesaRef: "",
-    }))
-    // Filters
-    if (params?.search) {
-      const q = params.search.toLowerCase()
-      transactions = transactions.filter(
-        (t) => t.phone.toLowerCase().includes(q) || t.id.toLowerCase().includes(q) || (t.mpesaRef || "").toLowerCase().includes(q)
-      )
-    }
-    if (params?.status && params.status !== "all") {
-      transactions = transactions.filter((t) => t.status === params.status)
-    }
-    const page = params?.page || 1
-    const limit = params?.limit || 10
-    const total = transactions.length
-    const totalPages = Math.max(1, Math.ceil(total / limit))
-    const paged = transactions.slice((page - 1) * limit, page * limit)
-    return { success: true, data: { transactions: paged, total, page, totalPages } }
+    const queryParams = new URLSearchParams()
+    if (params?.search) queryParams.append("search", params.search)
+    if (params?.status && params.status !== "all") queryParams.append("status", params.status)
+    if (params?.page) queryParams.append("page", params.page.toString())
+    if (params?.limit) queryParams.append("limit", params.limit.toString())
+    if (params?.startDate) queryParams.append("startDate", params.startDate)
+    if (params?.endDate) queryParams.append("endDate", params.endDate)
+    return this.request(`/api/transactions?${queryParams.toString()}`)
   }
 
   async refundTransaction(transactionId: string, reason?: string): Promise<ApiResponse> {
-    return { success: false, error: "Refund API is not implemented" }
+    return this.request(`/api/transactions/${transactionId}/refund`, { method: "POST", body: JSON.stringify({ reason }) })
   }
 
   async downloadReceipt(transactionId: string): Promise<ApiResponse<{ receiptUrl: string }>> {
-    return { success: false, error: "Receipt API is not implemented" }
+    return this.request(`/api/transactions/${transactionId}/receipt`)
   }
 
   // Support APIs
@@ -257,7 +196,11 @@ class ApiClient {
     page?: number
     limit?: number
   }): Promise<ApiResponse<{ requests: any[]; total: number; page: number; totalPages: number }>> {
-    return { success: true, data: { requests: [], total: 0, page: 1, totalPages: 1 } }
+    const queryParams = new URLSearchParams()
+    if (params?.status) queryParams.append("status", params.status)
+    if (params?.page) queryParams.append("page", params.page.toString())
+    if (params?.limit) queryParams.append("limit", params.limit.toString())
+    return this.request(`/api/support/requests?${queryParams.toString()}`)
   }
 
   // System APIs
@@ -295,20 +238,23 @@ class ApiClient {
   }
 
   async getSystemLogs(params?: { level?: string; limit?: number }): Promise<ApiResponse<any[]>> {
-    return { success: true, data: [] }
+    const queryParams = new URLSearchParams()
+    if (params?.level) queryParams.append("level", params.level)
+    if (params?.limit) queryParams.append("limit", params.limit.toString())
+    return this.request(`/api/system/logs?${queryParams.toString()}`)
   }
 
   // Network Management APIs
   async getConnectedDevices(): Promise<ApiResponse<any[]>> {
-    return { success: true, data: [] }
+    return this.request("/api/network/devices")
   }
 
   async disconnectAllUsers(): Promise<ApiResponse> {
-    return { success: false, error: "Not implemented" }
+    return this.request("/api/network/disconnect-all", { method: "POST" })
   }
 
   async getNetworkStatus(): Promise<ApiResponse<{ status: string; uptime: number; connectedUsers: number }>> {
-    return { success: true, data: { status: "ok", uptime: 0, connectedUsers: 0 } }
+    return this.request("/api/network/status")
   }
 }
 

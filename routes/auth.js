@@ -46,13 +46,7 @@ router.post("/admin/login", async (req, res) => {
             const token = jwt.sign({ id: admin.id, email: admin.email }, SECRET_KEY, { expiresIn: "1h" });
 
             // ✅ Send token in response
-            res.cookie("token", token, {
-                httpOnly: true, // Prevent access from JS
-                secure: process.env.NODE_ENV === "production", // Use HTTPS in production
-                sameSite: "Lax",
-            });
-
-            res.json({ message: "Login successful", token });
+            res.json({ success: true, message: "Login successful", token });
         });
 
     } catch (error) {
