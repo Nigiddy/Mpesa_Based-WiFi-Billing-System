@@ -58,9 +58,13 @@ const stats = [
   { number: "5+", label: "Years Experience" },
 ]
 
+import { usePageTitle } from "@/hooks/use-page-title"
+
 export default function AboutPage() {
+  const { TitleHead } = usePageTitle()
   return (
     <>
+      <TitleHead />
       <ToastProvider />
       <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900">
         <Header />

@@ -13,6 +13,7 @@ import { PaymentSuccessModal } from "@/components/payment-success-modal"
 import { ToastProvider } from "@/components/toast-provider"
 import { toast } from "sonner"
 import { apiClient, type PaymentRequest } from "@/lib/api"
+import { usePageTitle } from "@/hooks/use-page-title"
 
 // --- Constants ---
 const packages = [
@@ -134,6 +135,7 @@ const StatusDisplay = ({ status }) => {
 
 // --- Main Component ---
 export default function UserPortal() {
+  const { TitleHead } = usePageTitle()
   const [phone, setPhone] = useState("")
   const [amount, setAmount] = useState(30)
   const [transactionId, setTransactionId] = useState<string | null>(null)
@@ -340,6 +342,7 @@ export default function UserPortal() {
 
   return (
     <>
+      <TitleHead />
       <ToastProvider />
       <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900">
         <Header />
