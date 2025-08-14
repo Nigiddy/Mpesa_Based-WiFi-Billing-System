@@ -148,6 +148,7 @@ const FAQItem = ({ question, answer }) => {
 }
 
 export default function SupportPage() {
+  useDynamicTitle("Support")
   const [searchTerm, setSearchTerm] = useState("")
   const [selectedCategory, setSelectedCategory] = useState("all")
   const [contactForm, setContactForm] = useState({

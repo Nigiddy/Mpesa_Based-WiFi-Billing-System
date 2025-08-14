@@ -2,13 +2,13 @@ import type { Metadata } from 'next'
 import { GeistSans } from 'geist/font/sans'
 import { GeistMono } from 'geist/font/mono'
 import './globals.css'
-import { PROJECT_NAME } from '@/lib/constants'
+import { generateMetadata } from '@/lib/metadata'
 
-export const metadata: Metadata = {
-  title: `${PROJECT_NAME}`,
-  description: 'WiFi Billing System',
-  generator: 'v0.dev',
-}
+export const metadata: Metadata = generateMetadata({
+  title: 'Qonnect WiFi - Fast, Reliable Internet Access',
+  description: 'WiFi Billing System - Fast, reliable, and affordable internet access powered by M-Pesa payments in Kenya.',
+  keywords: ['WiFi', 'internet', 'billing', 'M-Pesa', 'Kenya', 'Qonnect', 'WiFi packages'],
+})
 
 export default function RootLayout({
   children,

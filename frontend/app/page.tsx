@@ -13,7 +13,7 @@ import { PaymentSuccessModal } from "@/components/payment-success-modal"
 import { ToastProvider } from "@/components/toast-provider"
 import { toast } from "sonner"
 import { apiClient, type PaymentRequest } from "@/lib/api"
-import { usePageTitle } from "@/hooks/use-page-title"
+import { useDynamicTitle } from "@/hooks/use-dynamic-title"
 
 // --- Constants ---
 const packages = [
@@ -53,7 +53,16 @@ const TrustIndicators = () => {
 }
 
 // --- Package Card Component ---
-const PackageCard = ({ pkg, isSelected, onSelect }) => {
+interface Package {
+  label: string
+  value: number
+  price: string
+  speed: string
+  color: 'blue' | 'purple' | 'green' | 'yellow'
+  popular: boolean
+}
+
+const PackageCard = ({ pkg, isSelected, onSelect }: { pkg: Package; isSelected: boolean; onSelect: (value: number) => void }) => {
   const colorClasses = {
     blue: "border-blue-500 bg-blue-500/10 shadow-blue-500/20",
     purple: "border-purple-500 bg-purple-500/10 shadow-purple-500/20",
@@ -96,7 +105,7 @@ const PackageCard = ({ pkg, isSelected, onSelect }) => {
 }
 
 // --- Status Display Component ---
-const StatusDisplay = ({ status }) => {
+const StatusDisplay = ({ status }: { status: "pending" | "completed" | "failed" | "" }) => {
   if (!status) return null
 
   const statusConfig = {
@@ -121,6 +130,7 @@ const StatusDisplay = ({ status }) => {
   }
 
   const config = statusConfig[status]
+  if (!config) return null
   const Icon = config.icon
 
   return (
@@ -135,7 +145,7 @@ const StatusDisplay = ({ status }) => {
 
 // --- Main Component ---
 export default function UserPortal() {
-  const { TitleHead } = usePageTitle()
+  const { title } = useDynamicTitle("Get Connected Instantly")
   const [phone, setPhone] = useState("")
   const [amount, setAmount] = useState(30)
   const [transactionId, setTransactionId] = useState<string | null>(null)
@@ -190,6 +200,11 @@ export default function UserPortal() {
     setStatus("pending")
 
     const selectedPackage = packages.find((p) => p.value === amount)
+    
+    if (!selectedPackage) {
+      toast.error("Invalid package selected")
+      return
+    }
 
     toast.loading("Initiating M-Pesa payment...", {
       description: `${selectedPackage.price} for ${selectedPackage.label}`,
@@ -342,7 +357,6 @@ export default function UserPortal() {
 
   return (
     <>
-      <TitleHead />
       <ToastProvider />
       <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900">
         <Header />

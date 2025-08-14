@@ -37,7 +37,7 @@ import Link from "next/link"
 import { ToastProvider } from "@/components/toast-provider"
 import { toast } from "sonner"
 import { apiClient, type User, type Transaction, type SystemStats, wsClient } from "@/lib/api"
-import { usePageTitle } from "@/hooks/use-page-title"
+import { useDynamicTitle } from "@/hooks/use-dynamic-title"
 
 // Header Component
 const AdminHeader = () => {
@@ -900,7 +900,7 @@ const SystemSettings = () => {
 
 // Main Admin Dashboard Component
 export default function AdminDashboard() {
-  const { TitleHead } = usePageTitle()
+  useDynamicTitle("Admin Dashboard")
   const [activeTab, setActiveTab] = useState("overview")
   const [stats, setStats] = useState<SystemStats | null>(null)
   const router = useRouter()
@@ -956,7 +956,6 @@ export default function AdminDashboard() {
 
   return (
     <>
-      <TitleHead />
       <ToastProvider />
       <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900">
         <AdminHeader />

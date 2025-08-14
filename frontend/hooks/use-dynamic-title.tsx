@@ -6,7 +6,7 @@ import { PROJECT_NAME } from "@/lib/constants"
 
 type TitleOrFactory = string | (() => string)
 
-export function usePageTitle(explicitTitle?: TitleOrFactory) {
+export function useDynamicTitle(explicitTitle?: TitleOrFactory) {
   const pathname = usePathname()
   const params = useParams() as Record<string, string | string[] | undefined>
   const [dataTitle, setDataTitle] = useState<string | null>(null)
@@ -64,6 +64,3 @@ export function usePageTitle(explicitTitle?: TitleOrFactory) {
 
   return { title: routeTitle, setDataTitle }
 }
-
-
-

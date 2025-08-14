@@ -152,6 +152,8 @@ const PackageCard = ({ pkg }) => {
 }
 
 export default function PackagesPage() {
+  useDynamicTitle("WiFi Packages")
+  
   return (
     <>
       <ToastProvider />
