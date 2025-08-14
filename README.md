@@ -22,6 +22,10 @@ Database: MySQL
 
 Router Integration: MikroTik (MAC Address Whitelisting)
 
+Project is live at:
+
+**[wiFiBillingSystem.demo](https://v0-wi-fi-billing-system-seven.vercel.app/)**
+
 
 **🔧 INSTALLATION & SETUP**
 
