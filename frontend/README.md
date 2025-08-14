@@ -13,5 +13,5 @@ NEXT_PUBLIC_API_URL=http://localhost:5000
 
 Project is live at:
 
-**[https://vercel.com/nigiddys-projects/v0-wi-fi-billing-system](https://vercel.com/nigiddys-projects/v0-wi-fi-billing-system)**
+**[wiFiBillingSystem.demo](https://v0-wi-fi-billing-system-seven.vercel.app/)**
 
