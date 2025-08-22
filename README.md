@@ -91,7 +91,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 For inquiries & support, reach out via: 
 
-*(Paid Consultation)* only
+*(Paid Consultations)* only
 
 📧 Email: gideonpapa9@gmail.com
 
