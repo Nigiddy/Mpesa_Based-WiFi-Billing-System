@@ -1,6 +1,6 @@
 const express = require("express");
 const { stkPush } = require("../config/mpesa");
-const db = require("../config/db");
+const prisma = require("../config/prismaClient");
 
 const router = express.Router();
 
@@ -21,10 +21,15 @@ router.post("/payments/initiate", async (req, res) => {
 
     const transactionId = `TXN_${Date.now()}`;
 
-    await db.promise().query(
-      "INSERT INTO payments (phone, amount, transaction_id, mac_address, status) VALUES (?, ?, ?, ?, 'pending')",
-      [normalizedPhone, amount, transactionId, macAddress]
-    );
+    await prisma.payment.create({
+      data: {
+        phone: normalizedPhone,
+        amount: Number(amount),
+        transactionId,
+        macAddress,
+        status: "pending"
+      }
+    });
 
     const mpesaResponse = await stkPush(normalizedPhone, amount, transactionId);
 
@@ -34,15 +39,15 @@ router.post("/payments/initiate", async (req, res) => {
 
     // Persist CheckoutRequestID for callback correlation
     try {
-      const checkoutId = mpesaResponse.CheckoutRequestID || null
+      const checkoutId = mpesaResponse.CheckoutRequestID || null;
       if (checkoutId) {
-        await db.promise().query(
-          "UPDATE payments SET mpesa_ref = ? WHERE transaction_id = ?",
-          [checkoutId, transactionId]
-        )
+        await prisma.payment.update({
+          where: { transactionId },
+          data: { mpesaRef: checkoutId }
+        });
       }
     } catch (e) {
-      console.error("Failed to persist mpesa_ref:", e)
+      console.error("Failed to persist mpesa_ref:", e);
     }
 
     return res.json({
@@ -65,17 +70,18 @@ router.post("/payments/initiate", async (req, res) => {
 router.get("/payments/status/:transactionId", async (req, res) => {
   try {
     const { transactionId } = req.params;
-    const [rows] = await db.promise().query(
-      "SELECT status, mpesa_ref AS mpesaRef, expires_at AS expiresAt FROM payments WHERE transaction_id = ?",
-      [transactionId]
-    );
-
-    if (!rows || rows.length === 0) {
+    const payment = await prisma.payment.findUnique({
+      where: { transactionId },
+      select: { status: true, mpesaRef: true, expiresAt: true }
+    });
+    if (!payment) {
       return res.json({ success: true, data: { status: "pending", mpesaRef: null, expiresAt: null } });
     }
-
-    const row = rows[0];
-    return res.json({ success: true, data: { status: row.status || "pending", mpesaRef: row.mpesaRef, expiresAt: row.expiresAt } });
+    return res.json({ success: true, data: {
+      status: payment.status || "pending",
+      mpesaRef: payment.mpesaRef,
+      expiresAt: payment.expiresAt
+    }});
   } catch (error) {
     console.error("/payments/status error:", error);
     return res.status(500).json({ success: false, error: "Failed to fetch payment status" });

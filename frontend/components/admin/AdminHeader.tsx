@@ -3,7 +3,13 @@ import Link from "next/link"
 import { Wifi } from "lucide-react"
 import { ThemeToggle } from "@/components/theme-toggle"
 
-const AdminHeader = () => (
+import { ReactNode } from "react"
+
+interface AdminHeaderProps {
+  children?: ReactNode
+}
+
+const AdminHeader = ({ children }: AdminHeaderProps) => (
   <header className="sticky top-0 z-50 w-full border-b border-slate-200/20 dark:border-white/10 bg-white/95 dark:bg-slate-900/95 backdrop-blur">
     <div className="container mx-auto px-4 sm:px-6 lg:px-8">
       <div className="flex h-16 items-center justify-between">
@@ -21,6 +27,7 @@ const AdminHeader = () => (
         <div className="flex items-center space-x-4">
           <Link href="/" className="text-sm font-medium text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition-colors">Back to Portal</Link>
           <ThemeToggle />
+          {children}
         </div>
       </div>
     </div>

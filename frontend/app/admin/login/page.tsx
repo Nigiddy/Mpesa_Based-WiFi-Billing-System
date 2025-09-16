@@ -17,23 +17,26 @@ export default function AdminLogin() {
   const [password, setPassword] = useState("")
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const { login } = useAuth()
   const router = useRouter()
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
+    setError(null)
 
     try {
       const result = await login(email, password)
-      
       if (result.success) {
         toast.success("Login successful!")
         router.push("/admin")
       } else {
+        setError(result.error || "Login failed")
         toast.error(result.error || "Login failed")
       }
     } catch (error) {
+      setError("An unexpected error occurred")
       toast.error("An unexpected error occurred")
     } finally {
       setLoading(false)
@@ -66,6 +69,7 @@ export default function AdminLogin() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
+                aria-invalid={!!error}
               />
             </div>
             <div className="space-y-2">
@@ -78,6 +82,7 @@ export default function AdminLogin() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
+                  aria-invalid={!!error}
                 />
                 <button
                   type="button"
@@ -88,6 +93,9 @@ export default function AdminLogin() {
                 </button>
               </div>
             </div>
+            {error && (
+              <div className="text-red-500 text-sm text-center" role="alert">{error}</div>
+            )}
             <Button
               type="submit"
               className="w-full"

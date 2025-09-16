@@ -1,5 +1,5 @@
 const express = require("express");
-const db = require("../config/db");
+const prisma = require("../config/prismaClient");
 const { whitelistMAC } = require("../config/mikrotik");
 
 const router = express.Router();
@@ -18,10 +18,10 @@ router.post("/mpesa/callback", async (req, res) => {
   if (resultCode !== 0) {
     // Mark failed using parameterized query
     try {
-      await db.promise().query(
-        "UPDATE payments SET status = 'failed' WHERE mpesa_ref = ?", 
-        [checkoutId]
-      );
+      await prisma.payment.updateMany({
+        where: { mpesaRef: checkoutId },
+        data: { status: "failed" }
+      });
       return res.json({ success: false, message: "Payment failed or canceled" });
     } catch (error) {
       console.error("❌ Failed to update payment status:", error);
@@ -34,17 +34,15 @@ router.post("/mpesa/callback", async (req, res) => {
 
   try {
     // Fetch MAC address using parameterized query
-    const [results] = await db.promise().query(
-      "SELECT mac_address FROM payments WHERE mpesa_ref = ?", 
-      [checkoutId]
-    );
-    
-    if (!results || results.length === 0) {
+    const payment = await prisma.payment.findFirst({
+      where: { mpesaRef: checkoutId },
+      select: { macAddress: true }
+    });
+    if (!payment || !payment.macAddress) {
       console.error("❌ Transaction not found for checkout ID:", checkoutId);
       return res.status(500).json({ success: false, error: "Transaction not found" });
     }
-
-    const mac = results[0].mac_address;
+    const mac = payment.macAddress;
     let time = "1Hr";
     if (Number(amount) === 30) time = "24Hrs";
     else if (Number(amount) === 20) time = "12Hrs";
@@ -56,10 +54,14 @@ router.post("/mpesa/callback", async (req, res) => {
 
     if (mikrotikResponse.success) {
       // Update payment status using parameterized query
-      await db.promise().query(
-        "UPDATE payments SET status = 'completed', mpesa_ref = ?, expires_at = DATE_ADD(NOW(), INTERVAL 1 DAY) WHERE mpesa_ref = ?",
-        [mpesaRef || checkoutId || null, checkoutId]
-      );
+      await prisma.payment.updateMany({
+        where: { mpesaRef: checkoutId },
+        data: {
+          status: "completed",
+          mpesaRef: mpesaRef || checkoutId || null,
+          expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000)
+        }
+      });
       return res.json({ success: true, message: mikrotikResponse.message });
     } else {
       console.error("❌ MikroTik Error:", mikrotikResponse.message);

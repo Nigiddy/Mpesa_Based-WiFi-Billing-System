@@ -1,5 +1,5 @@
 const bcrypt = require("bcryptjs");
-const db = require("../config/db");
+const prisma = require("../config/prismaClient");
 
 const email = "admin@example.com";  // Change this
 const password = "admin100"; // Change this
@@ -11,14 +11,18 @@ async function createAdmin() {
 
         console.log("Generated Hashed Password:", hashedPassword); // Debugging log
 
-        db.query("INSERT INTO admins (email, password) VALUES (?, ?)", [email, hashedPassword], (err, result) => {
-            if (err) {
-                console.error("Error inserting admin:", err);
-            } else {
-                console.log("Admin added successfully!");
-            }
-            process.exit();
-        });
+        try {
+            await prisma.admin.create({
+                data: {
+                    email,
+                    password: hashedPassword
+                }
+            });
+            console.log("Admin added successfully!");
+        } catch (err) {
+            console.error("Error inserting admin:", err);
+        }
+        process.exit();
     } catch (error) {
         console.error("Error hashing password:", error);
         process.exit(1);

@@ -1,6 +1,6 @@
 const express = require("express");
 const router = express.Router();
-const db = require("../db");
+const prisma = require("../config/prismaClient");
 const { initiateSTKPush, processMpesaCallback } = require("../controllers/mpesaController");
 
 // ✅ Handle MPesa STK Push Request
@@ -30,13 +30,19 @@ router.post("/mpesa/callback", async (req, res) => {
 // ✅ Check Payment Status (for Real-Time Updates)
 router.get("/status/:transactionId", async (req, res) => {
     const { transactionId } = req.params;
-
-    db.query("SELECT status FROM payments WHERE transaction_id = ?", [transactionId], (err, results) => {
-        if (err || results.length === 0) {
+    try {
+        const payment = await prisma.payment.findUnique({
+            where: { transactionId },
+            select: { status: true }
+        });
+        if (!payment) {
             return res.json({ status: "Pending" });
         }
-        res.json({ status: results[0].status });
-    });
+        res.json({ status: payment.status });
+    } catch (err) {
+        console.error("Error fetching payment status:", err);
+        res.json({ status: "Pending" });
+    }
 });
 
 module.exports = router;

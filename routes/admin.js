@@ -1,6 +1,6 @@
 const express = require("express");
 const router = express.Router();
-const db = require("../config/db");
+const prisma = require("../config/prismaClient");
 const authMiddleware = require("../middleware/authMiddleware");
 const { disconnectAllUsers, disconnectByMac, getActiveDevices, getStatus } = require("../config/mikrotik");
 
@@ -39,36 +39,26 @@ module.exports = router;
 router.get("/users", authMiddleware, async (req, res) => {
   try {
     const { search = "", status = "all", page = 1, limit = 10 } = req.query;
-    const [rows] = await db.promise().query(
-      "SELECT id, phone, mac_address AS macAddress, status, time_purchased AS lastSeen, amount FROM payments ORDER BY time_purchased DESC"
-    );
-    const map = new Map();
-    for (const r of rows) {
-      const key = r.phone;
-      const cur = map.get(key) || {
-        id: map.size + 1,
-        phone: r.phone,
-        macAddress: r.macAddress || "",
-        status: r.status === "completed" ? "active" : "expired",
-        totalSpent: 0,
-        sessionsCount: 0,
-        lastSeen: r.lastSeen,
-      };
-      cur.totalSpent += Number(r.amount) || 0;
-      cur.sessionsCount += 1;
-      if (new Date(r.lastSeen) > new Date(cur.lastSeen)) cur.lastSeen = r.lastSeen;
-      map.set(key, cur);
-    }
-    let users = Array.from(map.values());
-    const q = String(search).toLowerCase();
-    if (q) users = users.filter((u) => u.phone.toLowerCase().includes(q));
-    if (status !== "all") users = users.filter((u) => u.status === status);
     const pageNum = Number(page) || 1;
     const per = Number(limit) || 10;
-    const total = users.length;
+    const where = {};
+    if (search) {
+      where.phone = { contains: search, mode: "insensitive" };
+    }
+    if (status !== "all") {
+      where.status = status;
+    }
+    const [users, total] = await Promise.all([
+      prisma.user.findMany({
+        where,
+        skip: (pageNum - 1) * per,
+        take: per,
+        orderBy: { lastSeen: "desc" },
+      }),
+      prisma.user.count({ where }),
+    ]);
     const totalPages = Math.max(1, Math.ceil(total / per));
-    const slice = users.slice((pageNum - 1) * per, pageNum * per);
-    return res.json({ success: true, data: { users: slice, total, page: pageNum, totalPages } });
+    return res.json({ success: true, data: { users, total, page: pageNum, totalPages } });
   } catch (error) {
     return res.status(500).json({ success: false, error: "Failed to fetch users" });
   }

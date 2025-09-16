@@ -2,7 +2,7 @@ const express = require("express");
 const router = express.Router();
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
-const db = require("../config/db");
+const prisma = require("../config/prismaClient");
 require("dotenv").config();
 
 const SECRET_KEY = process.env.JWT_SECRET;
@@ -15,40 +15,28 @@ router.post("/admin/login", async (req, res) => {
     try {
         const { email, password } = req.body;
 
-        // ✅ Validate input
+        // Validate input
         if (!email || !password) {
             return res.status(400).json({ error: "Email and password are required" });
         }
 
-        // ✅ Check if admin exists
-        db.query("SELECT * FROM admins WHERE email = ?", [email], async (err, results) => {
-            if (err) {
-                console.error("Database Error:", err);
-                return res.status(500).json({ error: "Database error" });
-            }
-            if (results.length === 0) {
-                return res.status(401).json({ error: "Invalid email or password" });
-            }
+        // Find admin by email using Prisma
+        const admin = await prisma.admin.findUnique({ where: { email } });
+        if (!admin) {
+            return res.status(401).json({ error: "Invalid email or password" });
+        }
 
-            const admin = results[0];
+        // Check password
+        const isMatch = await bcrypt.compare(password, admin.password);
+        if (!isMatch) {
+            return res.status(401).json({ error: "Invalid email or password" });
+        }
 
-            // ✅ Debugging logs
-            console.log("Stored Hashed Password:", admin.password);
-            console.log("Password Input for Comparison:", password);
+        // Generate JWT token
+        const token = jwt.sign({ id: admin.id, email: admin.email }, SECRET_KEY, { expiresIn: "1h" });
 
-            // ✅ Check password
-            const isMatch = await bcrypt.compare(password, admin.password);
-            console.log("Password Match Status:", isMatch);
-
-            if (!isMatch) return res.status(401).json({ error: "Invalid email or password" });
-
-            // ✅ Generate token
-            const token = jwt.sign({ id: admin.id, email: admin.email }, SECRET_KEY, { expiresIn: "1h" });
-
-            // ✅ Send token in response
-            res.json({ success: true, message: "Login successful", token });
-        });
-
+        // Send token in response
+        res.json({ success: true, message: "Login successful", token });
     } catch (error) {
         console.error("Login Error:", error);
         res.status(500).json({ error: "Internal Server Error" });

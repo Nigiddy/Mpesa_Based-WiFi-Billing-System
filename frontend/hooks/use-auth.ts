@@ -56,28 +56,30 @@ export function useAuth() {
       const data = await response.json()
 
       if (!response.ok || !data.success) {
-        throw new Error(data.error || data.message || 'Login failed')
+        return {
+          success: false,
+          error: data.error || data.message || 'Login failed',
+        }
       }
 
-      const { token } = data
-      
+      const { token, admin } = data
       // Store token and admin data
       localStorage.setItem('admin_token', token)
-      localStorage.setItem('admin_data', JSON.stringify({ email }))
+      localStorage.setItem('admin_data', JSON.stringify(admin))
 
       setAuthState({
         isAuthenticated: true,
-        admin: { id: 1, email }, // In a real app, this would come from the server
+        admin,
         token,
         loading: false,
       })
 
-      return { success: true }
+      return { success: true, admin }
     } catch (error) {
       console.error('Login error:', error)
-      return { 
-        success: false, 
-        error: error instanceof Error ? error.message : 'Login failed' 
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Login failed',
       }
     }
   }
