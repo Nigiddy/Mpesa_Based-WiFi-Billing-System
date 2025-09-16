@@ -46,6 +46,7 @@ import PaymentManagement from "@/components/admin/PaymentManagement"
 import SystemSettings from "@/components/admin/SystemSettings"
 
 // Main Admin Dashboard Component
+export default function AdminDashboard() {
   useDynamicTitle("Admin Dashboard")
   const [activeTab, setActiveTab] = useState("overview")
   const [stats, setStats] = useState<SystemStats | null>(null)

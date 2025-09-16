@@ -1,3 +1,4 @@
+
 # Mpesa_Based-WiFi-Billing-System
 A WiFi billing system that allows users to purchase internet access via MPesa payments (STK Push). Ideal for cybercafés, small businesses, and public WiFi hotspots.
 
@@ -21,7 +22,6 @@ Backend: Node.js + Express
 Database: MySQL
 
 Router Integration: MikroTik (MAC Address Whitelisting)
-
 
 
 **🔧 INSTALLATION & SETUP**
@@ -70,7 +70,24 @@ npm install
 npm run dev
 ```
 
+# 🚀 RECENT IMPROVEMENTS (2025)
 
+**Authentication & Security**
+- Refactored backend authentication to use Prisma ORM and secure password hashing (bcrypt).
+- Implemented robust admin login with JWT-based session management.
+- Added error handling and secure credential validation for all login flows.
+
+**Frontend Enhancements**
+- Redesigned admin login page with improved error feedback and user experience.
+- Dashboard now displays logged-in admin info and provides a logout button.
+- Added reusable authentication hook and protected route wrapper for admin-only pages.
+
+**Codebase & Runtime**
+- All components now use proper default/named exports and pass runtime checks.
+- Modularized authentication logic for maintainability and scalability.
+- Improved error handling and feedback throughout the stack.
+
+*I feel like this is the last part for this project, will nolonger be managing it.*
 
 
 *🤝 CONTRIBUTING*
