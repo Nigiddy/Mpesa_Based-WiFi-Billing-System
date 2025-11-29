@@ -1,6 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const prisma = require("../config/prismaClient");
+const db = require("../config/db");
 const authMiddleware = require("../middleware/authMiddleware");
 const { disconnectAllUsers, disconnectByMac, getActiveDevices, getStatus } = require("../config/mikrotik");
 
@@ -34,7 +35,6 @@ router.get("/admin/summary", authMiddleware, async (req, res) => {
   });
 });
 
-module.exports = router;
 // Users endpoints
 router.get("/users", authMiddleware, async (req, res) => {
   try {
@@ -167,3 +167,5 @@ router.get("/network/status", authMiddleware, async (req, res) => {
   if (!resp.success) return res.status(500).json({ success: false, error: resp.error });
   return res.json({ success: true, data: resp.data });
 });
+
+module.exports = router;
