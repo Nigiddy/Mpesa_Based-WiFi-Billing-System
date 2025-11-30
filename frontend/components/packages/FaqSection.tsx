@@ -1,51 +1,58 @@
 "use client"
 
-import { Card, CardContent } from "@/components/ui/card"
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion"
+
+const faqs = [
+  {
+    question: "How do I pay for a package?",
+    answer:
+      "You can pay using M-Pesa. Just select your desired package on the homepage, enter your phone number, and you'll receive a prompt on your phone to complete the payment.",
+  },
+  {
+    question: "Is the internet access unlimited?",
+    answer:
+      "Yes, all our packages provide unlimited data access for the duration of the plan. There are no data caps or hidden fees.",
+  },
+  {
+    question: "Can I use the internet on multiple devices?",
+    answer:
+      "Each package is valid for a single device at a time. To use the internet on another device, you can either wait for the current session to expire or purchase a new package for the new device.",
+  },
+  {
+    question: "What happens when my package expires?",
+    answer:
+      "Your internet access will be disconnected. You can easily reconnect by purchasing a new package from our portal.",
+  },
+  {
+    question: "Who can I contact for support?",
+    answer:
+      "Our support team is available 24/7. You can find our contact details on the support page or by calling our toll-free number.",
+  },
+]
 
 export const FaqSection = () => {
   return (
-    <div className="max-w-4xl mx-auto">
-      <h2 className="text-3xl font-bold text-center text-slate-900 dark:text-white mb-12">
+    <div className="max-w-3xl mx-auto mb-20">
+      <h2 className="text-3xl font-extrabold text-center text-foreground mb-8">
         Frequently Asked Questions
       </h2>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-        <Card className="bg-white/50 dark:bg-slate-800/50 border-slate-200 dark:border-white/10">
-          <CardContent className="p-6">
-            <h3 className="font-semibold text-slate-900 dark:text-white mb-2">How do I pay?</h3>
-            <p className="text-slate-600 dark:text-slate-400">
-              Simply select your package and pay using M-Pesa. You'll receive instant access once payment is
-              confirmed.
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-white/50 dark:bg-slate-800/50 border-slate-200 dark:border-white/10">
-          <CardContent className="p-6">
-            <h3 className="font-semibold text-slate-900 dark:text-white mb-2">Is there a data limit?</h3>
-            <p className="text-slate-600 dark:text-slate-400">
-              No, all our packages offer unlimited data usage during the specified time period.
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-white/50 dark:bg-slate-800/50 border-slate-200 dark:border-white/10">
-          <CardContent className="p-6">
-            <h3 className="font-semibold text-slate-900 dark:text-white mb-2">Can I extend my session?</h3>
-            <p className="text-slate-600 dark:text-slate-400">
-              Yes, you can purchase additional time before your current session expires.
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-white/50 dark:bg-slate-800/50 border-slate-200 dark:border-white/10">
-          <CardContent className="p-6">
-            <h3 className="font-semibold text-slate-900 dark:text-white mb-2">What if I have issues?</h3>
-            <p className="text-slate-600 dark:text-slate-400">
-              Our support team is available 24/7 to help you with any connectivity or payment issues.
-            </p>
-          </CardContent>
-        </Card>
-      </div>
+      <Accordion type="single" collapsible className="w-full">
+        {faqs.map((faq, index) => (
+          <AccordionItem key={index} value={`item-${index}`}>
+            <AccordionTrigger className="text-left font-semibold">
+              {faq.question}
+            </AccordionTrigger>
+            <AccordionContent className="text-muted-foreground">
+              {faq.answer}
+            </AccordionContent>
+          </AccordionItem>
+        ))}
+      </Accordion>
     </div>
   )
 }

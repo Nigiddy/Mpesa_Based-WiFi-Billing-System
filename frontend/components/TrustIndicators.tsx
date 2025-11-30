@@ -1,29 +1,46 @@
-import { Shield, Users, Globe } from "lucide-react"
+import { Shield, Users, Globe, Wifi } from "lucide-react"
+import { motion } from "framer-motion"
 
-const TrustIndicators = () => (
-  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
-    <div className="flex items-center space-x-3 p-4 rounded-lg bg-slate-100/50 dark:bg-slate-800/30 border border-slate-200/50 dark:border-white/5">
-      <Shield className="h-8 w-8 text-green-600 dark:text-green-400" />
-      <div>
-        <p className="text-sm font-medium text-slate-900 dark:text-white">Secure Payment</p>
-        <p className="text-xs text-slate-600 dark:text-slate-400">M-Pesa Protected</p>
+const trustItems = [
+  {
+    icon: <Shield className="h-6 w-6 text-green-500" />,
+    title: "Secure Payments",
+    description: "All transactions are encrypted and protected.",
+  },
+  {
+    icon: <Users className="h-6 w-6 text-blue-500" />,
+    title: "Trusted by Many",
+    description: "Join our growing community of happy users.",
+  },
+  {
+    icon: <Wifi className="h-6 w-6 text-purple-500" />,
+    title: "High-Speed Access",
+    description: "Blazing-fast internet for all your needs.",
+  },
+]
+
+const TrustIndicators = () => {
+  return (
+    <div className="mt-20">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-8 text-center">
+        {trustItems.map((item, index) => (
+          <motion.div
+            key={item.title}
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: index * 0.1 }}
+            className="flex flex-col items-center p-6 bg-background rounded-lg"
+          >
+            <div className="flex items-center justify-center h-12 w-12 rounded-full bg-muted mb-4">
+              {item.icon}
+            </div>
+            <h3 className="text-lg font-semibold text-foreground mb-1">{item.title}</h3>
+            <p className="text-sm text-muted-foreground">{item.description}</p>
+          </motion.div>
+        ))}
       </div>
     </div>
-    <div className="flex items-center space-x-3 p-4 rounded-lg bg-slate-100/50 dark:bg-slate-800/30 border border-slate-200/50 dark:border-white/5">
-      <Users className="h-8 w-8 text-blue-600 dark:text-blue-400" />
-      <div>
-        <p className="text-sm font-medium text-slate-900 dark:text-white">10,000+ Users</p>
-        <p className="text-xs text-slate-600 dark:text-slate-400">Trusted Daily</p>
-      </div>
-    </div>
-    <div className="flex items-center space-x-3 p-4 rounded-lg bg-slate-100/50 dark:bg-slate-800/30 border border-slate-200/50 dark:border-white/5">
-      <Globe className="h-8 w-8 text-purple-600 dark:text-purple-400" />
-      <div>
-        <p className="text-sm font-medium text-slate-900 dark:text-white">99.9% Uptime</p>
-        <p className="text-xs text-slate-600 dark:text-slate-400">Reliable Connection</p>
-      </div>
-    </div>
-  </div>
-)
+  )
+}
 
 export default TrustIndicators

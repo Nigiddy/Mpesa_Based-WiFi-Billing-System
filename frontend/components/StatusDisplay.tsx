@@ -1,39 +1,51 @@
-import { CheckCircle, Clock, AlertTriangle } from "lucide-react"
+import { AnimatePresence, motion } from "framer-motion"
+import { CheckCircle, Clock, AlertTriangle, XCircle } from "lucide-react"
+
+const statusConfig = {
+  pending: {
+    icon: <Clock className="w-5 h-5 text-yellow-500" />,
+    text: "Waiting for M-Pesa payment...",
+    bg: "bg-yellow-500/10",
+    border: "border-yellow-500/20",
+  },
+  completed: {
+    icon: <CheckCircle className="w-5 h-5 text-green-500" />,
+    text: "Payment successful! You are connected.",
+    bg: "bg-green-500/10",
+    border: "border-green-500/20",
+  },
+  failed: {
+    icon: <AlertTriangle className="w-5 h-5 text-red-500" />,
+    text: "Payment failed. Please try again.",
+    bg: "bg-red-500/10",
+    border: "border-red-500/20",
+  },
+  "": {
+    icon: <XCircle className="w-5 h-5 text-gray-500" />,
+    text: "Status will appear here.",
+    bg: "bg-muted/50",
+    border: "border-border",
+  },
+}
 
 const StatusDisplay = ({ status }: { status: "pending" | "completed" | "failed" | "" }) => {
-  if (!status) return null
-
-  const statusConfig = {
-    pending: {
-      icon: Clock,
-      className: "bg-yellow-500/20 border-yellow-500/30 text-yellow-700 dark:text-yellow-300",
-      text: "Processing payment...",
-      iconClass: "animate-pulse",
-    },
-    completed: {
-      icon: CheckCircle,
-      className: "bg-green-500/20 border-green-500/30 text-green-700 dark:text-green-300",
-      text: "Payment successful! You're connected.",
-      iconClass: "",
-    },
-    failed: {
-      icon: AlertTriangle,
-      className: "bg-red-500/20 border-red-500/30 text-red-700 dark:text-red-300",
-      text: "Payment failed. Please try again.",
-      iconClass: "",
-    },
-  }
-
-  const config = statusConfig[status]
-  if (!config) return null
-  const Icon = config.icon
+  const config = statusConfig[status || ""]
 
   return (
-    <div
-      className={`flex items-center justify-center p-4 rounded-lg border transition-all duration-300 ${config.className}`}
-    >
-      <Icon className={`w-5 h-5 mr-3 ${config.iconClass}`} />
-      <span className="font-medium">{config.text}</span>
+    <div className="text-sm font-medium text-center text-muted-foreground pt-4">
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={status}
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -10 }}
+          transition={{ duration: 0.2 }}
+          className={`flex items-center justify-center p-3 rounded-lg border ${config.bg} ${config.border}`}
+        >
+          {config.icon}
+          <span className="ml-2">{config.text}</span>
+        </motion.div>
+      </AnimatePresence>
     </div>
   )
 }
