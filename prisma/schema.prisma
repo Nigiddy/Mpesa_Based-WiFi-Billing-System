@@ -37,10 +37,13 @@ model Payment {
   macAddress    String
   status        String
   timePurchased DateTime @default(now())
-  mpesaRef      String?
+  mpesaRef      String?  @unique
   expiresAt     DateTime?
   userId        Int?
   user          User?    @relation(fields: [userId], references: [id])
+
+  @@index([mpesaRef])
+  @@index([transactionId])
 }
 
 model SupportRequest {

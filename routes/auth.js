@@ -1,4 +1,5 @@
 const express = require("express");
+const { authLimiter } = require("../middleware/rateLimit");
 const router = express.Router();
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
@@ -10,14 +11,21 @@ if (!SECRET_KEY) {
     throw new Error("Missing JWT_SECRET in environment variables");
 }
 
-// ✅ Admin Login Route
-router.post("/admin/login", async (req, res) => {
+// ✅ Admin Login Route with rate limiting
+router.post("/admin/login", authLimiter, async (req, res) => {
     try {
         const { email, password } = req.body;
 
-        // Validate input
-        if (!email || !password) {
-            return res.status(400).json({ error: "Email and password are required" });
+        // Input validation: basic format checks
+        if (
+            !email ||
+            !password ||
+            typeof email !== "string" ||
+            typeof password !== "string" ||
+            !/^[\w-.]+@[\w-]+\.[a-zA-Z]{2,}$/.test(email) ||
+            password.length < 6
+        ) {
+            return res.status(400).json({ error: "Invalid email or password format" });
         }
 
         // Find admin by email using Prisma

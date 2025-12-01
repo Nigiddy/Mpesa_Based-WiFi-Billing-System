@@ -1,11 +1,23 @@
 const express = require("express");
+const { paymentLimiter } = require("../middleware/rateLimit");
 const router = express.Router();
 const prisma = require("../config/prismaClient");
 const { initiateSTKPush, processMpesaCallback } = require("../controllers/mpesaController");
 
-// ✅ Handle MPesa STK Push Request
-router.post("/stkpush", async (req, res) => {
+// ✅ Handle MPesa STK Push Request with rate limiting
+router.post("/stkpush", paymentLimiter, async (req, res) => {
     const { phone, amount } = req.body;
+
+    // Input validation: phone must be valid, amount must be number
+    if (
+        !phone ||
+        typeof phone !== "string" ||
+        !/^\d{10,13}$/.test(phone) ||
+        typeof amount !== "number" ||
+        amount < 10 || amount > 10000
+    ) {
+        return res.status(400).json({ success: false, message: "Invalid phone or amount" });
+    }
 
     try {
         const transactionId = await initiateSTKPush(phone, amount);
