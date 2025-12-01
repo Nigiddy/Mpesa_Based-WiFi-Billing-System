@@ -46,8 +46,15 @@ router.post("/admin/login", authLimiter, async (req, res) => {
 
         // Audit log: admin login
         logAudit("admin_login", { email }, admin.id);
-        // Send token in response
-        res.json({ success: true, message: "Login successful", token });
+        // Set JWT as HttpOnly cookie
+        res.cookie('admin_token', token, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'strict',
+            maxAge: 60 * 60 * 1000 // 1 hour
+        });
+        // Send admin info in response
+        res.json({ success: true, message: "Login successful", admin: { id: admin.id, email: admin.email } });
     } catch (error) {
         console.error("Login Error:", error);
         res.status(500).json({ error: "Internal Server Error" });

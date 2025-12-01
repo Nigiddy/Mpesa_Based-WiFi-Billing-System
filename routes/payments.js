@@ -1,3 +1,26 @@
+// ✅ Refund Transaction Endpoint (add audit logging)
+router.post("/refund/:transactionId", async (req, res) => {
+    const { transactionId } = req.params;
+    const { reason } = req.body;
+    try {
+        // Find transaction
+        const payment = await prisma.payment.findUnique({ where: { transactionId } });
+        if (!payment) {
+            return res.status(404).json({ success: false, message: "Transaction not found" });
+        }
+        // Mark as refunded
+        await prisma.payment.update({
+            where: { transactionId },
+            data: { status: "refunded" }
+        });
+        // Audit log: refund
+        logAudit("refund_processed", { transactionId, reason, admin: req.user?.id });
+        res.json({ success: true, message: "Refund processed" });
+    } catch (error) {
+        console.error("Refund Error:", error);
+        res.status(500).json({ success: false, message: "Refund failed" });
+    }
+});
 const express = require("express");
 const { paymentLimiter } = require("../middleware/rateLimit");
 const router = express.Router();

@@ -14,27 +14,29 @@ function getClient() {
 }
 
 async function whitelistMAC(macAddress, timeLabel) {
+  const { logAudit } = require("../utils/auditLogger");
   if (!macAddress) return { success: false, message: "No MAC provided" };
-  
+
   const client = getClient();
   if (!client) {
+    logAudit("mac_whitelist", { macAddress, timeLabel, devMode: true });
     return { success: true, message: `Dev mode: whitelisted ${macAddress} for ${timeLabel}` };
   }
-  
+
   try {
     await client.connect();
-    
     // Add hotspot bypass binding (common approach)
     await client.write(["/ip/hotspot/ip-binding/add"], {
       "mac-address": macAddress,
       type: "bypassed",
       comment: `Qonnect ${timeLabel}`,
     });
-    
     await client.close();
+    logAudit("mac_whitelist", { macAddress, timeLabel });
     return { success: true, message: `Whitelisted ${macAddress} for ${timeLabel}` };
   } catch (error) {
     console.error("MikroTik whitelist error:", error);
+    logAudit("mac_whitelist_failed", { macAddress, timeLabel, error: error.message || String(error) });
     return { success: false, message: error.message || String(error) };
   }
 }
