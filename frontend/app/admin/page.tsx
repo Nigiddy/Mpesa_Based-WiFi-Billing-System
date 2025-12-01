@@ -1,42 +1,15 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { useRouter } from "next/navigation"
 import {
   Activity,
   Users,
   CreditCard,
   Settings,
-  Search,
-  Download,
-  Eye,
-  Trash2,
-  CheckCircle,
-  XCircle,
-  Clock,
-  Wifi,
-  DollarSign,
-  TrendingUp,
-  AlertTriangle,
-  RefreshCw,
-  MoreHorizontal,
-  UserX,
-  WifiOff,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { ThemeToggle } from "@/components/theme-toggle"
-import Link from "next/link"
-import { ToastProvider } from "@/components/toast-provider"
-import { toast } from "sonner"
-import { apiClient, type User, type Transaction, type SystemStats, wsClient } from "@/lib/api"
+import { apiClient, type SystemStats, wsClient } from "@/lib/api"
 import { useDynamicTitle } from "@/hooks/use-dynamic-title"
 import AdminHeader from "@/components/admin/AdminHeader"
 import { useAuth } from "@/hooks/use-auth"
@@ -44,21 +17,14 @@ import StatsCards from "@/components/admin/StatsCards"
 import UserManagement from "@/components/admin/UserManagement"
 import PaymentManagement from "@/components/admin/PaymentManagement"
 import SystemSettings from "@/components/admin/SystemSettings"
+import { toast } from "sonner"
 
 // Main Admin Dashboard Component
 export default function AdminDashboard() {
   useDynamicTitle("Admin Dashboard")
   const [activeTab, setActiveTab] = useState("overview")
   const [stats, setStats] = useState<SystemStats | null>(null)
-  const router = useRouter()
-  const { isAuthenticated, admin, logout, loading } = useAuth()
-
-  // Check authentication
-  useEffect(() => {
-    if (!loading && !isAuthenticated) {
-      router.push('/admin/login')
-    }
-  }, [isAuthenticated, loading, router])
+  const { admin, logout } = useAuth()
 
   useEffect(() => {
     fetchStats()
@@ -103,7 +69,6 @@ export default function AdminDashboard() {
 
   return (
     <>
-      <ToastProvider />
       <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900">
         <AdminHeader>
           {admin && (

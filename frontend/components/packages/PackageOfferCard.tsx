@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/componen
 import { cn } from "@/lib/utils"
 import Link from "next/link"
 
-export const PackageCard = ({ pkg }) => {
+export const PackageOfferCard = ({ pkg }) => {
   const handleSelectPackage = () => {
     // Logic to handle package selection
     window.location.href = `/?package=${pkg.id}`

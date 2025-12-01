@@ -58,14 +58,10 @@ export interface SystemStats {
 class ApiClient {
   private async request<T>(endpoint: string, options: RequestInit = {}): Promise<ApiResponse<T>> {
     try {
-      // Get auth token for protected routes
-      const token = typeof window !== 'undefined' ? localStorage.getItem('admin_token') : null
-      const authHeaders = token ? { Authorization: `Bearer ${token}` } : {}
-      
       const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+        credentials: 'include', // Send cookies with requests
         headers: {
           "Content-Type": "application/json",
-          ...authHeaders,
           ...options.headers,
         },
         ...options,
@@ -85,6 +81,24 @@ class ApiClient {
         error: error instanceof Error ? error.message : "Unknown error occurred",
       }
     }
+  }
+
+  // Auth APIs
+  async login(email: string, password: string): Promise<ApiResponse<{ admin: any }>> {
+    return this.request("/auth/admin/login", {
+      method: "POST",
+      body: JSON.stringify({ email, password }),
+    })
+  }
+
+  async logout(): Promise<ApiResponse> {
+    return this.request("/auth/admin/logout", {
+      method: "POST",
+    })
+  }
+
+  async checkAuthStatus(): Promise<ApiResponse<{ admin: any }>> {
+    return this.request("/auth/admin/me")
   }
 
   // Device & Network APIs
