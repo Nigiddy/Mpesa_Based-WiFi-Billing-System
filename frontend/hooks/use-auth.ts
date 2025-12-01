@@ -23,26 +23,27 @@ export function useAuth() {
   })
 
   useEffect(() => {
-    // Check for existing token on mount
-    const token = localStorage.getItem('admin_token')
-    const adminData = localStorage.getItem('admin_data')
-    
-    if (token && adminData) {
+    // On mount, check authentication by calling backend
+    (async () => {
       try {
-        const admin = JSON.parse(adminData)
-        setAuthState({
-          isAuthenticated: true,
-          admin,
-          token,
-          loading: false,
+        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'}/auth/admin/me`, {
+          credentials: 'include',
         })
+        const data = await response.json()
+        if (response.ok && data.success && data.admin) {
+          setAuthState({
+            isAuthenticated: true,
+            admin: data.admin,
+            token: null,
+            loading: false,
+          })
+        } else {
+          setAuthState(prev => ({ ...prev, loading: false }))
+        }
       } catch (error) {
-        console.error('Error parsing admin data:', error)
-        logout()
+        setAuthState(prev => ({ ...prev, loading: false }))
       }
-    } else {
-      setAuthState(prev => ({ ...prev, loading: false }))
-    }
+    })()
   }, [])
 
   const login = async (email: string, password: string) => {
@@ -53,29 +54,22 @@ export function useAuth() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ email, password }),
+        credentials: 'include',
       })
-
       const data = await response.json()
-
       if (!response.ok || !data.success) {
         return {
           success: false,
           error: data.error || data.message || 'Login failed',
         }
       }
-
-      const { token, admin } = data
-      // Store token and admin data
-      localStorage.setItem('admin_token', token)
-      localStorage.setItem('admin_data', JSON.stringify(admin))
-
+      const { admin } = data
       setAuthState({
         isAuthenticated: true,
         admin,
-        token,
+        token: null,
         loading: false,
       })
-
       return { success: true, admin }
     } catch (error) {
       console.error('Login error:', error)
@@ -87,8 +81,11 @@ export function useAuth() {
   }
 
   const logout = () => {
-    localStorage.removeItem('admin_token')
-    localStorage.removeItem('admin_data')
+    // Call backend to clear cookie (implement /auth/admin/logout route)
+    fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'}/auth/admin/logout`, {
+      method: 'POST',
+      credentials: 'include',
+    })
     setAuthState({
       isAuthenticated: false,
       admin: null,
@@ -98,8 +95,8 @@ export function useAuth() {
   }
 
   const getAuthHeaders = () => {
-    const token = localStorage.getItem('admin_token')
-    return token ? { Authorization: `Bearer ${token}` } : {}
+    // No longer needed; rely on cookies
+    return {}
   }
 
   return {
