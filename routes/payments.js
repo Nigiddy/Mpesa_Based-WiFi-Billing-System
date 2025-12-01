@@ -3,6 +3,7 @@ const { paymentLimiter } = require("../middleware/rateLimit");
 const router = express.Router();
 const prisma = require("../config/prismaClient");
 const { initiateSTKPush, processMpesaCallback } = require("../controllers/mpesaController");
+const { logAudit } = require("../utils/auditLogger");
 
 // ✅ Handle MPesa STK Push Request with rate limiting
 router.post("/stkpush", paymentLimiter, async (req, res) => {
@@ -21,6 +22,8 @@ router.post("/stkpush", paymentLimiter, async (req, res) => {
 
     try {
         const transactionId = await initiateSTKPush(phone, amount);
+        // Audit log: payment initiation
+        logAudit("payment_initiated", { phone, amount, transactionId });
         res.json({ success: true, message: "STK Push sent", transactionId });
     } catch (error) {
         console.error("STK Push Error:", error);

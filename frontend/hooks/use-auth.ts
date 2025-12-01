@@ -13,6 +13,8 @@ interface AuthState {
 }
 
 export function useAuth() {
+    // SECURITY NOTE: Storing JWT in localStorage is vulnerable to XSS.
+    // For production, use HttpOnly cookies for admin tokens and update backend to support cookie-based auth.
   const [authState, setAuthState] = useState<AuthState>({
     isAuthenticated: false,
     admin: null,

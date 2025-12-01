@@ -2,6 +2,7 @@ const express = require("express");
 const cors = require("cors");
 const bodyParser = require("body-parser");
 const helmet = require("helmet");
+const enforceHTTPS = require("./middleware/enforceHTTPS");
 require("dotenv").config();
 
 const mpesaRoutes = require("./routes/mpesaRoutes");
@@ -12,6 +13,9 @@ const getMacRoute = require("./routes/getMac");
 const { authLimiter, paymentLimiter, apiLimiter } = require("./middleware/rateLimit");
 
 const app = express();
+
+// Enforce HTTPS in production
+app.use(enforceHTTPS);
 
 // Trust proxy for correct req.ip behind reverse proxies
 app.set("trust proxy", 1);

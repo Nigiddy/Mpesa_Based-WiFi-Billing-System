@@ -3,6 +3,7 @@ const { authLimiter } = require("../middleware/rateLimit");
 const router = express.Router();
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
+const { logAudit } = require("../utils/auditLogger");
 const prisma = require("../config/prismaClient");
 require("dotenv").config();
 
@@ -43,6 +44,8 @@ router.post("/admin/login", authLimiter, async (req, res) => {
         // Generate JWT token
         const token = jwt.sign({ id: admin.id, email: admin.email }, SECRET_KEY, { expiresIn: "1h" });
 
+        // Audit log: admin login
+        logAudit("admin_login", { email }, admin.id);
         // Send token in response
         res.json({ success: true, message: "Login successful", token });
     } catch (error) {
