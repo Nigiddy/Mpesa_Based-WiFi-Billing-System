@@ -3,6 +3,10 @@ import { GeistSans } from 'geist/font/sans'
 import { GeistMono } from 'geist/font/mono'
 import './globals.css'
 import { generateMetadata } from '@/lib/metadata'
+import { ThemeProvider } from '@/components/theme-provider'
+import { Header } from '@/components/header'
+import { Footer } from '@/components/footer'
+import { ToastProvider } from '@/components/toast-provider'
 
 export const metadata: Metadata = generateMetadata({
   title: 'Qonnect WiFi - Fast, Reliable Internet Access',
@@ -16,7 +20,7 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <head>
         <style>{`
 html {
@@ -26,7 +30,14 @@ html {
 }
         `}</style>
       </head>
-      <body>{children}</body>
+      <body className="flex flex-col min-h-screen bg-background font-sans antialiased">
+        <ThemeProvider>
+          <ToastProvider />
+          <Header />
+          <main className="flex-grow">{children}</main>
+          <Footer />
+        </ThemeProvider>
+      </body>
     </html>
   )
 }

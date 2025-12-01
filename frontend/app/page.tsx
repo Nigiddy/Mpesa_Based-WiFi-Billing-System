@@ -1,17 +1,11 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { Phone, Package, Zap } from "lucide-react"
+import { Phone, Zap } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Header } from "@/components/header"
-import { Footer } from "@/components/footer"
 import { PaymentSuccessModal } from "@/components/payment-success-modal"
-import { ToastProvider } from "@/components/toast-provider"
-import { toast } from "sonner"
-import { apiClient, type PaymentRequest } from "@/lib/api"
 import { useDynamicTitle } from "@/hooks/use-dynamic-title"
 import TrustIndicators from "@/components/TrustIndicators"
 import PackageCard from "@/components/PackageCard"
@@ -19,104 +13,29 @@ import StatusDisplay from "@/components/StatusDisplay"
 import DeviceInfoPanel from "@/components/DeviceInfoPanel"
 import InfoPanel from "@/components/InfoPanel"
 import { motion } from "framer-motion"
-
-// --- Constants ---
-const packages = [
-  { label: "24 Hours", value: 30, price: "Ksh 30", speed: "5 Mbps", popular: true },
-  { label: "12 Hours", value: 20, price: "Ksh 20", speed: "4 Mbps", popular: false },
-  { label: "4 Hours", value: 15, price: "Ksh 15", speed: "3 Mbps", popular: false },
-  { label: "1 Hour", value: 10, price: "Ksh 10", speed: "2 Mbps", popular: false },
-]
+import { packages } from "@/lib/packages"
+import { usePayment } from "@/hooks/use-payment"
 
 // --- Main Component ---
 export default function UserPortal() {
   useDynamicTitle("Get Connected Instantly")
-  const [phone, setPhone] = useState("")
-  const [amount, setAmount] = useState(30)
-  const [transactionId, setTransactionId] = useState<string | null>(null)
-  const [status, setStatus] = useState<"pending" | "completed" | "failed" | "">("")
-  const [isLoading, setIsLoading] = useState(false)
-  const [macAddress, setMacAddress] = useState("Loading...")
-  const [showSuccessModal, setShowSuccessModal] = useState(false)
-  const [paymentData, setPaymentData] = useState<any>(null)
-
-  useEffect(() => {
-    fetchDeviceInfo()
-  }, [])
-
-  const fetchDeviceInfo = async () => {
-    try {
-      const response = await apiClient.getDeviceInfo()
-      if (response.success && response.data) {
-        setMacAddress(response.data.macAddress)
-      } else {
-        throw new Error(response.error || "Failed to fetch device info")
-      }
-    } catch (error) {
-      console.error("Error fetching device info:", error)
-      setMacAddress("UNAVAILABLE")
-      toast.error("Could not retrieve device information.")
-    }
-  }
-
-  const handlePayment = async () => {
-    if (!/^(07|01)\d{8}$/.test(phone)) {
-      toast.error("Invalid phone number.", {
-        description: "Please enter a valid 10-digit number (e.g., 0712345678).",
-      })
-      return
-    }
-
-    const selectedPackage = packages.find((p) => p.value === amount)
-    if (!selectedPackage) return
-
-    setIsLoading(true)
-    setStatus("pending")
-    toast.loading(`Initiating M-Pesa payment for ${selectedPackage.price}...`, {
-      id: "payment-toast",
-    })
-
-    try {
-      const paymentPayload: PaymentRequest = {
-        phone: `254${phone.substring(1)}`,
-        amount,
-        package: selectedPackage.label,
-        macAddress,
-        speed: selectedPackage.speed,
-      }
-      
-      const response = await apiClient.initiatePayment(paymentPayload)
-
-      if (response.success && response.data) {
-        setTransactionId(response.data.transactionId)
-        pollPaymentStatus(response.data.transactionId)
-      } else {
-        throw new Error(response.error || "Payment initiation failed")
-      }
-    } catch (error) {
-      setStatus("failed")
-      toast.error("Payment Error", {
-        description: error instanceof Error ? error.message : "An unexpected error occurred.",
-        id: "payment-toast",
-      })
-      setIsLoading(false)
-    }
-  }
-
-  const pollPaymentStatus = async (txnId: string) => {
-    // ... polling logic remains the same
-  }
-
-  const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value.replace(/\D/g, "")
-    setPhone(value)
-  }
+  const {
+    phone,
+    amount,
+    status,
+    isLoading,
+    macAddress,
+    showSuccessModal,
+    paymentData,
+    handlePhoneChange,
+    setAmount,
+    handlePayment,
+    setShowSuccessModal,
+  } = usePayment()
 
   return (
     <>
-      <ToastProvider />
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
-        <Header />
+      <div className="min-h-screen text-gray-900 dark:text-gray-100">
         <main className="container mx-auto px-4 sm:px-6 lg:px-8 py-12 lg:py-20">
           <div className="max-w-5xl mx-auto">
             {/* Hero Section */}
@@ -205,7 +124,6 @@ export default function UserPortal() {
             <TrustIndicators />
           </div>
         </main>
-        <Footer />
         {paymentData && (
           <PaymentSuccessModal
             isOpen={showSuccessModal}
