@@ -7,7 +7,7 @@ import { HeroSection } from "@/components/packages/HeroSection"
 import { FaqSection } from "@/components/packages/FaqSection"
 import { CtaSection } from "@/components/packages/CtaSection"
 import { PackageOfferCard } from "@/components/packages/PackageOfferCard"
-import useDynamicTitle from "@/hooks/use-dynamic-title"
+import { useDynamicTitle } from "@/hooks/use-dynamic-title"
 import { motion } from "framer-motion"
 import { Sparkles, Shield, Zap } from "lucide-react"
 
