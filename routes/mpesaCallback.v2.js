@@ -12,7 +12,7 @@
 
 const express = require("express");
 const prisma = require("../config/prismaClient");
-const paymentQueue = require("../config/paymentQueue");
+const { getPaymentQueue } = require("../config/paymentQueue");
 const {
   validateCallbackSecurityMiddleware,
   verifyPaymentWithMpesa
@@ -64,37 +64,43 @@ router.post(
 
       // Enqueue payment processing job
       // idempotency: jobId ensures only one job per checkoutId
-      try {
-        await paymentQueue.add(
-          'process-payment-secure',
-          {
-            checkoutId,
-            callbackData,
-            callbackSecurity: req.callbackSecurity
-          },
-          {
-            jobId: checkoutId, // Idempotency key
-            removeOnComplete: true,
-            removeOnFail: false, // Keep failed jobs for debugging
-            attempts: 3,
-            backoff: {
-              type: 'exponential',
-              delay: 2000
+      const queue = getPaymentQueue();
+      if (queue) {
+        try {
+          await queue.add(
+            'process-payment-secure',
+            {
+              checkoutId,
+              callbackData,
+              callbackSecurity: req.callbackSecurity
+            },
+            {
+              jobId: checkoutId, // Idempotency key
+              removeOnComplete: true,
+              removeOnFail: false, // Keep failed jobs for debugging
+              attempts: 3,
+              backoff: {
+                type: 'exponential',
+                delay: 2000
+              }
             }
+          );
+
+          console.log(`✅ Payment job enqueued: ${checkoutId}`);
+          logAudit('callback_enqueued', { checkoutId, ip: req.callbackSecurity.clientIP });
+        } catch (error) {
+          // Job may already exist if duplicate callback
+          if (error.message.includes('already exists')) {
+            console.log(`ℹ️ Duplicate callback: ${checkoutId} (already enqueued)`);
+            return;
           }
-        );
 
-        console.log(`✅ Payment job enqueued: ${checkoutId}`);
-        logAudit('callback_enqueued', { checkoutId, ip: req.callbackSecurity.clientIP });
-      } catch (error) {
-        // Job may already exist if duplicate callback
-        if (error.message.includes('already exists')) {
-          console.log(`ℹ️ Duplicate callback: ${checkoutId} (already enqueued)`);
-          return;
+          console.error('❌ Failed to enqueue payment job:', error.message);
+          logAudit('callback_enqueue_failed', { checkoutId, error: error.message });
         }
-
-        console.error('❌ Failed to enqueue payment job:', error.message);
-        logAudit('callback_enqueue_failed', { checkoutId, error: error.message });
+      } else {
+        console.log(`⚠️  Redis unavailable - payment will be processed without queue: ${checkoutId}`);
+        logAudit('callback_queued_skipped', { checkoutId, reason: 'Redis unavailable' });
       }
     } catch (error) {
       console.error('❌ Callback handler error:', error);
@@ -346,7 +352,11 @@ async function setupPaymentWorker() {
   console.log('🚀 Payment worker started');
 }
 
-// Initialize worker on module load
-setupPaymentWorker().catch(console.error);
+// Initialize worker on module load (only if Redis is available)
+if (getPaymentQueue()) {
+  setupPaymentWorker().catch(error => {
+    console.warn('⚠️ Failed to initialize payment worker:', error.message);
+  });
+}
 
 module.exports = router;

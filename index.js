@@ -91,9 +91,9 @@ app.get("/", (req, res) => {
 // ✅ Global error handler
 app.use((err, req, res, next) => {
   console.error('Unhandled error:', err);
-  res.status(500).json({ 
-    success: false, 
-    error: process.env.NODE_ENV === 'production' ? 'Internal server error' : err.message 
+  res.status(500).json({
+    success: false,
+    error: process.env.NODE_ENV === 'production' ? 'Internal server error' : err.message
   });
 });
 
@@ -111,28 +111,37 @@ const server = app.listen(PORT, () => {
   console.log(`✅ Server running on port ${PORT}`);
   console.log(`✅ CORS allowed origin: ${FRONTEND_ORIGIN}`);
   console.log(`✅ Environment: ${process.env.NODE_ENV || 'development'}`);
-  
+
   // ✅ Start background workers
   console.log('\n🔄 Starting background workers...');
   sessionExpiryInterval = startSessionExpiryWorker();
   paymentTimeoutInterval = startPaymentTimeoutWorker();
+
+  // Try to initialize payment worker if it exists (it might be in a separate file or required here)
+  try {
+    const { initializePaymentWorker } = require('./workers/paymentWorker');
+    initializePaymentWorker();
+  } catch (e) {
+    console.warn("Could not auto-start payment worker:", e.message);
+  }
+
   console.log('✅ All background workers started\n');
 });
 
 // ✅ Graceful shutdown
 process.on('SIGTERM', () => {
   console.log('\n📛 SIGTERM received. Shutting down gracefully...');
-  
+
   // Stop workers
   stopSessionExpiryWorker(sessionExpiryInterval);
   stopPaymentTimeoutWorker(paymentTimeoutInterval);
-  
+
   // Close server
   server.close(() => {
     console.log('✅ Server shutdown complete');
     process.exit(0);
   });
-  
+
   // Force exit after 10 seconds if graceful shutdown fails
   setTimeout(() => {
     console.error('❌ Forced shutdown after timeout');
@@ -142,11 +151,11 @@ process.on('SIGTERM', () => {
 
 process.on('SIGINT', () => {
   console.log('\n📛 SIGINT received. Shutting down gracefully...');
-  
+
   // Stop workers
   stopSessionExpiryWorker(sessionExpiryInterval);
   stopPaymentTimeoutWorker(paymentTimeoutInterval);
-  
+
   // Close server
   server.close(() => {
     console.log('✅ Server shutdown complete');

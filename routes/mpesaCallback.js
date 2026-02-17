@@ -1,7 +1,7 @@
 const express = require("express");
 const { paymentLimiter } = require("../middleware/rateLimit");
 const prisma = require("../config/prismaClient");
-const paymentQueue = require("../config/paymentQueue");
+const { getPaymentQueue } = require("../config/paymentQueue");
 const { whitelistMAC } = require("../config/mikrotik");
 
 const router = express.Router();
@@ -19,13 +19,18 @@ router.post("/mpesa/callback", paymentLimiter, async (req, res) => {
       console.error("❌ Invalid callback payload");
       return;
     }
-    await paymentQueue.add('process-payment', {
-      checkoutId,
-      callbackData
-    }, {
-      jobId: checkoutId // idempotency: only one job per checkoutId
-    });
-    console.log(`📥 Payment job enqueued for checkoutId: ${checkoutId}`);
+    const queue = getPaymentQueue();
+    if (queue) {
+      await queue.add('process-payment', {
+        checkoutId,
+        callbackData
+      }, {
+        jobId: checkoutId // idempotency: only one job per checkoutId
+      });
+      console.log(`📥 Payment job enqueued for checkoutId: ${checkoutId}`);
+    } else {
+      console.log(`⚠️  Redis unavailable - callback processed without queue for checkoutId: ${checkoutId}`);
+    }
   } catch (err) {
     console.error('❌ Failed to enqueue payment job:', err);
   }

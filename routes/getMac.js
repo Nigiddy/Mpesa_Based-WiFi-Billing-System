@@ -5,15 +5,19 @@ const { spawn } = require("child_process");
 // Input validation and sanitization
 const validateIP = (ip) => {
   if (!ip || typeof ip !== 'string') return false;
-  
-  // Basic IP validation regex
-  const ipRegex = /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
-  return ipRegex.test(ip);
+
+  // IPv4 validation
+  const ipv4Regex = /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
+
+  // IPv6 validation (basic)
+  const ipv6Regex = /^(?:[a-fA-F0-9]{1,4}:){7}[a-fA-F0-9]{1,4}$|^::1$|^::ffff:(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$|^[a-fA-F0-9]{1,4}::$/;
+
+  return ipv4Regex.test(ip) || ipv6Regex.test(ip) || ip === '::1';
 };
 
 const sanitizeIP = (ip) => {
-  // Remove any potentially dangerous characters
-  return ip.replace(/[^0-9.]/g, '');
+  // Allow numbers, dots, and colons (for IPv6)
+  return ip.replace(/[^0-9.:a-fA-F]/g, '');
 };
 
 const getMacAddress = (ip) => {
@@ -22,15 +26,20 @@ const getMacAddress = (ip) => {
       return resolve(null);
     }
 
+    // Check for localhost
+    if (ip === '127.0.0.1' || ip === '::1' || ip.includes('::ffff:127.0.0.1')) {
+      return resolve("00:00:00:00:00:00");
+    }
+
     const sanitizedIP = sanitizeIP(ip);
     const platform = process.platform;
-    
+
     // ✅ SAFE: Use spawn instead of exec to prevent command injection
     const { spawn } = require("child_process");
-    
+
     let arpProcess;
     let grepProcess;
-    
+
     try {
       const timeout = setTimeout(() => {
         if (arpProcess) arpProcess.kill();
@@ -69,7 +78,7 @@ const getMacAddress = (ip) => {
         // Extract MAC address from output
         const macRegex = /([a-fA-F0-9]{2}[:-]){5}[a-fA-F0-9]{2}/;
         const macMatch = output.match(macRegex);
-        
+
         resolve(macMatch ? macMatch[0] : "MAC_NOT_FOUND");
       });
 
@@ -97,12 +106,20 @@ router.get("/device/info", async (req, res) => {
     const ipFromForwarded = Array.isArray(forwardedFor)
       ? forwardedFor[0]
       : forwardedFor?.split(",")[0];
-    const ip = req.query.ip || ipFromForwarded || req.ip || req.connection?.remoteAddress;
+
+    // Normalize IP
+    let ip = req.query.ip || ipFromForwarded || req.ip || req.connection?.remoteAddress;
+
+    // Handle IPv6 mapped IPv4
+    if (ip && ip.startsWith('::ffff:')) {
+      ip = ip.substring(7);
+    }
 
     if (!ip || !validateIP(ip)) {
-      return res.status(400).json({ 
-        success: false, 
-        error: "Valid IP address is required." 
+      console.warn(`[Device Info] Invalid IP ignored: ${ip}`);
+      return res.status(400).json({
+        success: false,
+        error: `Valid IP address is required. Received: ${ip}`
       });
     }
 
