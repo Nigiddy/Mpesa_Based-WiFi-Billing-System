@@ -61,4 +61,49 @@ router.post("/admin/login", authLimiter, async (req, res) => {
     }
 });
 
+// ✅ Check Auth Status Route (verify if admin is logged in)
+router.get("/admin/me", async (req, res) => {
+    try {
+        const token = req.cookies.admin_token;
+        
+        if (!token) {
+            return res.status(401).json({ success: false, error: "Not authenticated" });
+        }
+
+        try {
+            const decoded = jwt.verify(token, SECRET_KEY);
+            const admin = await prisma.admin.findUnique({ 
+                where: { id: decoded.id },
+                select: { id: true, email: true } // Don't return password
+            });
+
+            if (!admin) {
+                return res.status(401).json({ success: false, error: "Admin not found" });
+            }
+
+            res.json({ success: true, admin });
+        } catch (tokenError) {
+            return res.status(401).json({ success: false, error: "Invalid or expired token" });
+        }
+    } catch (error) {
+        console.error("Auth Check Error:", error);
+        res.status(500).json({ success: false, error: "Internal Server Error" });
+    }
+});
+
+// ✅ Admin Logout Route
+router.post("/admin/logout", (req, res) => {
+    try {
+        res.clearCookie('admin_token', {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'strict'
+        });
+        res.json({ success: true, message: "Logged out successfully" });
+    } catch (error) {
+        console.error("Logout Error:", error);
+        res.status(500).json({ error: "Internal Server Error" });
+    }
+});
+
 module.exports = router;
