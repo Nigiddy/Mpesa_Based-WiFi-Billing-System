@@ -10,40 +10,149 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// ============================================
+// ENUMS
+// ============================================
+
+enum UserStatus {
+  ACTIVE
+  EXPIRED
+  BLOCKED
+  INACTIVE
+}
+
+enum PaymentStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  EXPIRED
+  FRAUD_DETECTED
+  VERIFICATION_FAILED
+  COMPLETED_BUT_MAC_FAILED
+  REFUNDED
+}
+
+// ============================================
+// MODELS
+// ============================================
+
+model User {
+  id              Int       @id @default(autoincrement())
+  phone           String    @unique
+  macAddress      String    @unique
+  status          UserStatus @default(ACTIVE)
+  blockedReason   String?
+  
+  totalSpent      Int       @default(0)
+  sessionsCount   Int       @default(0)
+  lastSeen        DateTime?
+  
+  payments        Payment[]
+  sessions        Session[]
+  
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  
+  @@index([phone])
+  @@index([macAddress])
+  @@index([status])
+}
+
+model Payment {
+  id              Int            @id @default(autoincrement())
+  transactionId   String         @unique
+  userId          Int?
+  user            User?          @relation(fields: [userId], references: [id], onDelete: SetNull)
+  
+  phone           String         // Denormalized for audit trail
+  amount          Int            // In cents (e.g., 1000 = Ksh 10)
+  status          PaymentStatus  @default(PENDING)
+  
+  mpesaRef        String?        @unique @map("mpesa_reference")
+  mpesaReceipt    String?        @unique @map("mpesa_receipt_number")
+  
+  macAddress      String
+  ipAddress       String?
+  
+  expiresAt       DateTime?
+  
+  // Audit trail
+  requestedAt     DateTime       @default(now())
+  completedAt     DateTime?
+  failedAt        DateTime?
+  
+  // Refunds
+  refundedAmount  Int?           @default(0)
+  refundReason    String?
+  refundedAt      DateTime?
+  
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  
+  // Status history (audit trail)
+  statusUpdates   PaymentStatusUpdate[]
+  // One payment can have multiple sessions (user connects multiple times)
+  sessions        Session[]
+  
+  @@index([userId])
+  @@index([mpesaRef])
+  @@index([transactionId])
+  @@index([status])
+  @@index([createdAt])
+  @@index([status, createdAt])
+}
+
+// ✅ NEW: Track payment status changes for immutability
+model PaymentStatusUpdate {
+  id              Int             @id @default(autoincrement())
+  paymentId       Int
+  payment         Payment         @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  
+  oldStatus       PaymentStatus
+  newStatus       PaymentStatus
+  
+  reason          String          // "callback_received", "manual_admin", "refund", etc.
+  changedBy       Int?            // Admin user ID if manual change
+  
+  createdAt       DateTime        @default(now())
+  
+  @@index([paymentId])
+  @@index([createdAt])
+}
+
+// ✅ NEW: Track user sessions
+model Session {
+  id              Int       @id @default(autoincrement())
+  userId          Int
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  paymentId       Int?
+  payment         Payment?  @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+  
+  macAddress      String    // User's device MAC
+  ipAddress       String?   // User's IP at connection
+  
+  startTime       DateTime  @default(now())
+  expiryTime      DateTime  // When session expires
+  disconnectedAt  DateTime? // When user disconnected
+  reason          String?   // "expired", "admin_disconnect", "ip_change", etc.
+  
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  
+  @@index([userId])
+  @@index([macAddress])
+  @@index([expiryTime])
+  @@index([disconnectedAt])
+}
+
 model Admin {
   id       Int    @id @default(autoincrement())
   email    String @unique
   password String
-}
-
-model User {
-  id            Int      @id @default(autoincrement())
-  phone         String   @unique
-  macAddress    String
-  status        String
-  currentPackage String? 
-  expiresAt     DateTime?
-  totalSpent    Int      @default(0)
-  sessionsCount Int      @default(0)
-  lastSeen      DateTime?
-  payments      Payment[]
-}
-
-model Payment {
-  id            Int      @id @default(autoincrement())
-  phone         String
-  amount        Int
-  transactionId String   @unique
-  macAddress    String
-  status        String
-  timePurchased DateTime @default(now())
-  mpesaRef      String?  @unique
-  expiresAt     DateTime?
-  userId        Int?
-  user          User?    @relation(fields: [userId], references: [id])
-
-  @@index([mpesaRef])
-  @@index([transactionId])
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model SupportRequest {
@@ -51,4 +160,18 @@ model SupportRequest {
   phone     String
   message   String
   createdAt DateTime @default(now())
+}
+
+// ✅ NEW: Audit log for critical actions
+model AuditLog {
+  id        Int      @id @default(autoincrement())
+  action    String   // "admin_login", "mac_whitelist", "payment_failed", etc.
+  userId    Int?
+  details   String   // JSON string of additional context
+  ip        String?
+  createdAt DateTime @default(now())
+  
+  @@index([action])
+  @@index([userId])
+  @@index([createdAt])
 }

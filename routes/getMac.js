@@ -1,6 +1,6 @@
 const express = require("express");
 const router = express.Router();
-const { exec } = require("child_process");
+const { spawn } = require("child_process");
 
 // Input validation and sanitization
 const validateIP = (ip) => {
@@ -25,36 +25,69 @@ const getMacAddress = (ip) => {
     const sanitizedIP = sanitizeIP(ip);
     const platform = process.platform;
     
-    // Use safer command construction
-    let cmd;
-    if (platform === "win32") {
-      cmd = `arp -a | find "${sanitizedIP}"`;
-    } else {
-      cmd = `arp -an | grep "(${sanitizedIP})"`;
-    }
-
-    // Set timeout and limit command execution
-    const childProcess = exec(cmd, { 
-      timeout: 5000, // 5 second timeout
-      maxBuffer: 1024 * 1024 // 1MB buffer limit
-    }, (error, stdout) => {
-      if (error) {
-        console.error("Error fetching MAC address:", error);
-        return resolve("MAC_NOT_FOUND");
-      }
-
-      const macRegex = /([a-fA-F0-9]{2}[:-]){5}[a-fA-F0-9]{2}/;
-      const macMatch = stdout.match(macRegex);
-      resolve(macMatch ? macMatch[0] : "MAC_NOT_FOUND");
-    });
-
-    // Kill process if it takes too long
-    setTimeout(() => {
-      if (childProcess && !childProcess.killed) {
-        childProcess.kill();
+    // ✅ SAFE: Use spawn instead of exec to prevent command injection
+    const { spawn } = require("child_process");
+    
+    let arpProcess;
+    let grepProcess;
+    
+    try {
+      const timeout = setTimeout(() => {
+        if (arpProcess) arpProcess.kill();
+        if (grepProcess) grepProcess.kill();
         resolve("MAC_NOT_FOUND");
+      }, 5000);
+
+      // Spawn ARP process
+      if (platform === "win32") {
+        // Windows: arp -a
+        arpProcess = spawn("arp", ["-a"]);
+      } else {
+        // Linux/Mac: arp -an
+        arpProcess = spawn("arp", ["-an"]);
       }
-    }, 6000);
+
+      // Spawn grep process
+      grepProcess = spawn("grep", [sanitizedIP]);
+
+      // Pipe arp output to grep
+      arpProcess.stdout.pipe(grepProcess.stdin);
+
+      let output = "";
+
+      grepProcess.stdout.on("data", (data) => {
+        output += data.toString();
+      });
+
+      grepProcess.on("close", (code) => {
+        clearTimeout(timeout);
+
+        if (!output) {
+          return resolve("MAC_NOT_FOUND");
+        }
+
+        // Extract MAC address from output
+        const macRegex = /([a-fA-F0-9]{2}[:-]){5}[a-fA-F0-9]{2}/;
+        const macMatch = output.match(macRegex);
+        
+        resolve(macMatch ? macMatch[0] : "MAC_NOT_FOUND");
+      });
+
+      grepProcess.on("error", (error) => {
+        clearTimeout(timeout);
+        console.error("Error fetching MAC address:", error.message);
+        resolve("MAC_NOT_FOUND");
+      });
+
+      arpProcess.on("error", (error) => {
+        clearTimeout(timeout);
+        console.error("Error running arp command:", error.message);
+        resolve("MAC_NOT_FOUND");
+      });
+    } catch (error) {
+      console.error("Exception in getMacAddress:", error.message);
+      resolve("MAC_NOT_FOUND");
+    }
   });
 };
 

@@ -2,24 +2,9 @@ require("dotenv").config();
 const axios = require("axios");
 const moment = require("moment");
 
+// Note: Environment variable validation is now handled by config/secrets.js on startup
 const MPESA_ENV = process.env.MPESA_ENV || "sandbox"; // "sandbox" or "production"
 const MPESA_BASE_URL = MPESA_ENV === "sandbox" ? "https://sandbox.safaricom.co.ke" : "https://api.safaricom.co.ke";
-
-// ✅ Ensure required env variables are set
-const REQUIRED_ENV_VARS = [
-    "MPESA_CONSUMER_KEY",
-    "MPESA_CONSUMER_SECRET",
-    "MPESA_SHORTCODE",
-    "MPESA_PASSKEY",
-    "MPESA_CALLBACK_URL"
-];
-
-for (const varName of REQUIRED_ENV_VARS) {
-    if (!process.env[varName]) {
-        console.error(`❌ Missing environment variable: ${varName}`);
-        process.exit(1); // Stop the server if important variables are missing
-    }
-}
 
 // ✅ Get access token
 const getAccessToken = async () => {

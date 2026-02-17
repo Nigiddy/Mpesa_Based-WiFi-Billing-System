@@ -2,15 +2,26 @@ const express = require("express");
 const cors = require("cors");
 const bodyParser = require("body-parser");
 const helmet = require("helmet");
+const cookieParser = require("cookie-parser");
 const enforceHTTPS = require("./middleware/enforceHTTPS");
 require("dotenv").config();
 
-const mpesaRoutes = require("./routes/mpesaRoutes");
-const mpesaCallback = require("./routes/mpesaCallback");
+// ✅ Validate secrets on startup
+const { validateSecrets, displaySecretsConfig } = require("./config/secrets");
+validateSecrets();
+displaySecretsConfig();
+
+// ✅ Use versioned, secure routes
+const mpesaRoutesV1 = require("./routes/mpesaRoutes.v1");
+const mpesaCallbackV2 = require("./routes/mpesaCallback.v2");
 const authRoutes = require("./routes/auth");
 const adminRoutes = require("./routes/admin");
 const getMacRoute = require("./routes/getMac");
 const { authLimiter, paymentLimiter, apiLimiter } = require("./middleware/rateLimit");
+
+// ✅ Background workers
+const { startSessionExpiryWorker, stopSessionExpiryWorker } = require("./workers/sessionExpiryWorker");
+const { startPaymentTimeoutWorker, stopPaymentTimeoutWorker } = require("./workers/paymentTimeoutWorker");
 
 const app = express();
 
@@ -49,6 +60,7 @@ app.use(
 );
 
 // ✅ Middleware
+app.use(cookieParser()); // ⚠️ MUST be before CSRF middleware
 app.use(bodyParser.json({ limit: '10mb' }));
 app.use(bodyParser.urlencoded({ extended: true, limit: '10mb' }));
 
@@ -66,9 +78,9 @@ app.use("/api", adminRoutes);
 // get MAC
 app.use("/api", getMacRoute);
 
-// ✅ Register Routes
-app.use("/api", mpesaRoutes);
-app.use("/", mpesaCallback);
+// ✅ Register Routes (v1 and v2 versioned)
+app.use("/api/v1", mpesaRoutesV1); // Secure payment endpoints with validation
+app.use("/", mpesaCallbackV2); // Secure callback handler with 9-step verification
 app.use("/auth", authRoutes);
 
 // ✅ Health Check Route
@@ -92,8 +104,52 @@ app.use((req, res) => {
 
 // ✅ Start Server
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
+let sessionExpiryInterval = null;
+let paymentTimeoutInterval = null;
+
+const server = app.listen(PORT, () => {
   console.log(`✅ Server running on port ${PORT}`);
   console.log(`✅ CORS allowed origin: ${FRONTEND_ORIGIN}`);
   console.log(`✅ Environment: ${process.env.NODE_ENV || 'development'}`);
+  
+  // ✅ Start background workers
+  console.log('\n🔄 Starting background workers...');
+  sessionExpiryInterval = startSessionExpiryWorker();
+  paymentTimeoutInterval = startPaymentTimeoutWorker();
+  console.log('✅ All background workers started\n');
+});
+
+// ✅ Graceful shutdown
+process.on('SIGTERM', () => {
+  console.log('\n📛 SIGTERM received. Shutting down gracefully...');
+  
+  // Stop workers
+  stopSessionExpiryWorker(sessionExpiryInterval);
+  stopPaymentTimeoutWorker(paymentTimeoutInterval);
+  
+  // Close server
+  server.close(() => {
+    console.log('✅ Server shutdown complete');
+    process.exit(0);
+  });
+  
+  // Force exit after 10 seconds if graceful shutdown fails
+  setTimeout(() => {
+    console.error('❌ Forced shutdown after timeout');
+    process.exit(1);
+  }, 10000);
+});
+
+process.on('SIGINT', () => {
+  console.log('\n📛 SIGINT received. Shutting down gracefully...');
+  
+  // Stop workers
+  stopSessionExpiryWorker(sessionExpiryInterval);
+  stopPaymentTimeoutWorker(paymentTimeoutInterval);
+  
+  // Close server
+  server.close(() => {
+    console.log('✅ Server shutdown complete');
+    process.exit(0);
+  });
 });
