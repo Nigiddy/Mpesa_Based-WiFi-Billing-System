@@ -1,8 +1,6 @@
 "use client"
 
 import { useState } from "react"
-import { Header } from "@/components/header"
-import { Footer } from "@/components/footer"
 import { useDynamicTitle } from "@/hooks/use-dynamic-title"
 import { motion } from "framer-motion"
 import { 
@@ -150,7 +148,6 @@ export default function SupportPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <Header />
 
       <main className="container mx-auto px-4 sm:px-6 lg:px-8">
         {/* Hero Section */}
@@ -477,7 +474,6 @@ export default function SupportPage() {
         </div>
       </main>
 
-      <Footer />
     </div>
   )
 }

@@ -1,7 +1,5 @@
 "use client"
 
-import { Header } from "@/components/header"
-import { Footer } from "@/components/footer"
 import { useDynamicTitle } from "@/hooks/use-dynamic-title"
 import { motion } from "framer-motion"
 import { Users, Shield, Zap, Heart, Target, Award, Wifi, TrendingUp, MapPin } from "lucide-react"
@@ -95,7 +93,6 @@ export default function AboutPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <Header />
 
       <main className="container mx-auto px-4 sm:px-6 lg:px-8">
         {/* Hero Section */}
@@ -342,7 +339,6 @@ export default function AboutPage() {
         </div>
       </main>
 
-      <Footer />
     </div>
   )
 }
