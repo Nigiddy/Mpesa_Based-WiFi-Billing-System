@@ -6,7 +6,6 @@ import { Logo } from "./ui/logo"
 const footerLinks = {
   "Company": [
     { title: "About", href: "/about" },
-    { title: "Packages", href: "/packages" },
     { title: "Blog", href: "/blog" },
   ],
   "Support": [

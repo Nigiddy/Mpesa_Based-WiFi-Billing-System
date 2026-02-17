@@ -14,7 +14,6 @@ export function Header() {
   const [scrolled, setScrolled] = useState(false)
 
   const navLinks = [
-    { href: "/packages", label: "Packages" },
     { href: "/about", label: "About" },
     { href: "/support", label: "Support" },
   ]
