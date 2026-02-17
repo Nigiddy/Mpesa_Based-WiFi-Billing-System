@@ -7,9 +7,12 @@ const enforceHTTPS = require("./middleware/enforceHTTPS");
 require("dotenv").config();
 
 // ✅ Validate secrets on startup
+// ✅ Validate secrets on startup
 const { validateSecrets, displaySecretsConfig } = require("./config/secrets");
+const { initWebSocket } = require("./services/websocket"); // Import WebSocket service
 validateSecrets();
 displaySecretsConfig();
+
 
 // ✅ Use versioned, secure routes
 const mpesaRoutesV1 = require("./routes/mpesaRoutes.v1");
@@ -126,6 +129,9 @@ const server = app.listen(PORT, () => {
   }
 
   console.log('✅ All background workers started\n');
+
+  // ✅ Initialize WebSocket Server
+  initWebSocket(server);
 });
 
 // ✅ Graceful shutdown

@@ -71,7 +71,7 @@ class ApiClient {
 
       // Include CSRF token for mutations if available
       if (isMutation && this.csrfToken) {
-        headers["X-CSRF-Token"] = this.csrfToken
+        (headers as Record<string, string>)["X-CSRF-Token"] = this.csrfToken
       }
 
       const response = await fetch(`${API_BASE_URL}${endpoint}`, {
@@ -99,7 +99,7 @@ class ApiClient {
   // ✅ CSRF Token Management
   async fetchCsrfToken(): Promise<string | null> {
     try {
-      const response = await this.request<{ token: string }>("/admin/csrf-token")
+      const response = await this.request<{ token: string }>("/api/admin/csrf-token")
       if (response.success && response.data?.token) {
         this.csrfToken = response.data.token
         console.log("✅ CSRF token fetched successfully")
@@ -272,7 +272,7 @@ class ApiClient {
   }
 
   async getSystemSettings(): Promise<ApiResponse<any>> {
-    return { success: true, data: { } }
+    return { success: true, data: {} }
   }
 
   async updateSystemSettings(settings: any): Promise<ApiResponse> {
