@@ -28,9 +28,12 @@ export function usePayment() {
         throw new Error(response.error || "Failed to fetch device info")
       }
     } catch (error) {
-      console.error("Error fetching device info:", error)
+      console.warn("Could not fetch device info (Backend might be offline):", error)
       setMacAddress("UNAVAILABLE")
-      toast.error("Could not retrieve device information.")
+      // Only show error toast if it's not a connection refused (which is common in dev)
+      if (process.env.NODE_ENV === "production") {
+        toast.error("Could not retrieve device information.")
+      }
     }
   }
 

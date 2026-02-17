@@ -22,13 +22,17 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        <style>{`
-html {
-  font-family: ${GeistSans.style.fontFamily};
-  --font-sans: ${GeistSans.variable};
-  --font-mono: ${GeistMono.variable};
-}
-        `}</style>
+        <style
+          dangerouslySetInnerHTML={{
+            __html: `
+              html {
+                font-family: ${GeistSans.style.fontFamily};
+                --font-sans: ${GeistSans.variable};
+                --font-mono: ${GeistMono.variable};
+              }
+            `,
+          }}
+        />
       </head>
       <body className="flex flex-col min-h-screen bg-background font-sans antialiased">
         <ThemeProvider>
