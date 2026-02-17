@@ -1,20 +1,13 @@
 "use client"
 
-import { Phone, Zap, Wifi, Shield, ArrowRight } from "lucide-react"
+import { Phone, Zap, Wifi, Shield, ArrowRight, Sparkles, CheckCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Header } from "@/components/header"
-import { Footer } from "@/components/footer"
-import { PaymentSuccessModal } from "@/components/payment-success-modal"
 import { useDynamicTitle } from "@/hooks/use-dynamic-title"
-import TrustIndicators from "@/components/TrustIndicators"
-import PackageCard from "@/components/PackageCard"
-import StatusDisplay from "@/components/StatusDisplay"
-import DeviceInfoPanel from "@/components/DeviceInfoPanel"
-import InfoPanel from "@/components/InfoPanel"
 import { motion } from "framer-motion"
+import Link from "next/link"
 import { packages } from "@/lib/packages"
 import { usePayment } from "@/hooks/use-payment"
 
@@ -26,229 +19,386 @@ export default function UserPortal() {
     status,
     isLoading,
     macAddress,
-    showSuccessModal,
-    paymentData,
     handlePhoneChange,
     setAmount,
     handlePayment,
-    setShowSuccessModal,
   } = usePayment()
 
   return (
-    <div className="min-h-screen bg-background">
-      <Header />
-      
-      <main className="container mx-auto px-4 sm:px-6 lg:px-8 py-12 lg:py-20">
-        <div className="max-w-6xl mx-auto">
-          {/* Hero Section */}
-          <div className="relative overflow-hidden mb-16">
-            {/* Background decoration */}
-            <div className="absolute inset-0 overflow-hidden pointer-events-none">
-              <div className="absolute -top-40 -right-40 w-80 h-80 bg-primary/5 rounded-full blur-3xl" />
-              <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-blue-500/5 rounded-full blur-3xl" />
-            </div>
-
+    <div className="min-h-screen bg-gradient-to-b from-background via-background to-primary/5">
+      <main className="container mx-auto px-4 sm:px-6 lg:px-8">
+        {/* PREMIUM HERO SECTION */}
+        <motion.section
+          initial="hidden"
+          animate="visible"
+          variants={{
+            hidden: { opacity: 0 },
+            visible: {
+              opacity: 1,
+              transition: { staggerChildren: 0.1, delayChildren: 0.2 },
+            },
+          }}
+          className="relative py-16 lg:py-24 text-center"
+        >
+          {/* Background decoration */}
+          <div className="absolute inset-0 overflow-hidden pointer-events-none">
             <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.6 }}
-              className="text-center relative"
-            >
-              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 border border-primary/20 mb-6">
-                <Zap className="w-4 h-4 text-primary" />
-                <span className="text-sm font-semibold text-primary">Instant Activation • M-Pesa Payment</span>
-              </div>
-
-              <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight mb-6">
-                Seamless{" "}
-                <span className="bg-gradient-to-r from-primary via-blue-500 to-primary bg-clip-text text-transparent">
-                  WiFi Access
-                </span>
-              </h1>
-              <p className="text-lg lg:text-xl text-muted-foreground max-w-3xl mx-auto leading-relaxed mb-8">
-                Get online in seconds. Choose a package, pay with M-Pesa, and enjoy
-                high-speed internet. It's that simple.
-              </p>
-
-              {/* Quick stats */}
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.6, delay: 0.2 }}
-                className="flex flex-wrap justify-center gap-6 lg:gap-8"
-              >
-                <div className="flex items-center gap-2 text-muted-foreground">
-                  <div className="p-2 rounded-lg bg-green-500/10">
-                    <Wifi className="w-5 h-5 text-green-600" />
-                  </div>
-                  <span className="text-sm font-medium">High-Speed</span>
-                </div>
-                
-                <div className="flex items-center gap-2 text-muted-foreground">
-                  <div className="p-2 rounded-lg bg-blue-500/10">
-                    <Zap className="w-5 h-5 text-blue-600" />
-                  </div>
-                  <span className="text-sm font-medium">Instant</span>
-                </div>
-                
-                <div className="flex items-center gap-2 text-muted-foreground">
-                  <div className="p-2 rounded-lg bg-purple-500/10">
-                    <Shield className="w-5 h-5 text-purple-600" />
-                  </div>
-                  <span className="text-sm font-medium">Secure</span>
-                </div>
-              </motion.div>
-            </motion.div>
+              animate={{ opacity: [0.3, 0.5, 0.3] }}
+              transition={{ duration: 4, repeat: Infinity }}
+              className="absolute -top-40 -right-40 w-80 h-80 bg-primary/20 rounded-full blur-3xl"
+            />
+            <motion.div
+              animate={{ opacity: [0.2, 0.4, 0.2] }}
+              transition={{ duration: 5, repeat: Infinity }}
+              className="absolute -bottom-40 -left-40 w-80 h-80 bg-secondary/15 rounded-full blur-3xl"
+            />
           </div>
 
-          {/* Main Content Grid */}
-          <div className="grid lg:grid-cols-5 gap-8 lg:gap-12 mb-16">
-            {/* Payment Form (Left) */}
-            <motion.div 
-              className="lg:col-span-3"
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.6, delay: 0.3 }}
+          <div className="relative z-10 max-w-4xl mx-auto">
+            {/* Badge */}
+            <motion.div
+              variants={{
+                hidden: { opacity: 0, scale: 0.9 },
+                visible: { opacity: 1, scale: 1 },
+              }}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 border border-primary/30 mb-8"
             >
-              <Card className="bg-background/50 backdrop-blur-sm border-border/60 shadow-xl">
-                <CardHeader className="border-b border-border/60 pb-6">
+              <Sparkles className="w-4 h-4 text-primary" />
+              <span className="text-sm font-semibold text-primary">
+                Instant Activation • M-Pesa Payment
+              </span>
+            </motion.div>
+
+            {/* Main Heading */}
+            <motion.h1
+              variants={{
+                hidden: { opacity: 0, y: 20 },
+                visible: { opacity: 1, y: 0 },
+              }}
+              className="text-5xl sm:text-6xl lg:text-7xl font-extrabold tracking-tight mb-6"
+            >
+              <span>Seamless </span>
+              <span className="gradient-text">WiFi Access</span>
+            </motion.h1>
+
+            {/* Subheading */}
+            <motion.p
+              variants={{
+                hidden: { opacity: 0, y: 20 },
+                visible: { opacity: 1, y: 0 },
+              }}
+              className="text-lg sm:text-xl text-muted-foreground max-w-2xl mx-auto mb-12 leading-relaxed"
+            >
+              Get online in seconds. Choose a package, pay with M-Pesa, and enjoy
+              high-speed internet. It's that simple.
+            </motion.p>
+
+            {/* CTA Button */}
+            <motion.div
+              variants={{
+                hidden: { opacity: 0, y: 20 },
+                visible: { opacity: 1, y: 0 },
+              }}
+              className="mb-12"
+            >
+              <Link href="/packages">
+                <Button variant="premium" size="lg" className="px-8 group">
+                  Get Started
+                  <ArrowRight className="w-4 h-4 ml-2 group-hover:translate-x-1 transition-transform" />
+                </Button>
+              </Link>
+            </motion.div>
+
+            {/* Quick Stats */}
+            <motion.div
+              variants={{
+                hidden: { opacity: 0, y: 20 },
+                visible: { opacity: 1, y: 0 },
+              }}
+              className="flex flex-wrap justify-center gap-6 lg:gap-12 pt-12 border-t border-border/30"
+            >
+              <div className="text-center">
+                <div className="text-3xl font-bold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
+                  5,000+
+                </div>
+                <p className="text-sm text-muted-foreground">Active Users</p>
+              </div>
+              <div className="text-center">
+                <div className="text-3xl font-bold text-success">99.9%</div>
+                <p className="text-sm text-muted-foreground">Uptime</p>
+              </div>
+              <div className="text-center">
+                <div className="text-3xl font-bold text-secondary">
+                  {"<"}30s
+                </div>
+                <p className="text-sm text-muted-foreground">Activation</p>
+              </div>
+            </motion.div>
+          </div>
+        </motion.section>
+
+        {/* QUICK CONNECT SECTION */}
+        <motion.section
+          initial={{ opacity: 0, y: 40 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6 }}
+          viewport={{ once: true, margin: "-100px" }}
+          className="py-12 lg:py-16"
+        >
+          <div className="grid lg:grid-cols-3 gap-8">
+            {/* Form Card */}
+            <div className="lg:col-span-2">
+              <Card variant="elevated">
+                <CardHeader className="bg-gradient-to-r from-primary/10 to-secondary/10">
                   <CardTitle className="flex items-center text-2xl">
-                    <div className="p-2 rounded-lg bg-primary/10 mr-3">
+                    <div className="p-2 rounded-lg bg-primary/20 mr-3">
                       <Zap className="w-6 h-6 text-primary" />
                     </div>
-                    Instant Connection
+                    Quick Connect
                   </CardTitle>
                   <p className="text-sm text-muted-foreground mt-2">
-                    Complete your purchase in three simple steps
+                    3 simple steps to instant internet
                   </p>
                 </CardHeader>
-                <CardContent className="space-y-6 pt-6">
-                  {/* Step 1: Phone Number */}
-                  <div className="space-y-3">
-                    <div className="flex items-center gap-2 mb-2">
-                      <div className="flex items-center justify-center w-6 h-6 rounded-full bg-primary text-primary-foreground text-xs font-bold">
+                <CardContent className="pt-8 space-y-8">
+                  {/* Step 1 */}
+                  <motion.div
+                    initial={{ opacity: 0, x: -20 }}
+                    whileInView={{ opacity: 1, x: 0 }}
+                    viewport={{ once: true }}
+                    className="space-y-3"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="flex-shrink-0 flex items-center justify-center w-8 h-8 rounded-full bg-primary text-white font-bold text-sm">
                         1
                       </div>
-                      <Label htmlFor="phone" className="font-semibold text-base">
+                      <Label className="text-base font-semibold">
                         Enter M-Pesa Number
                       </Label>
                     </div>
-                    <div className="relative">
+                    <div className="relative ml-11">
                       <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
                       <Input
-                        id="phone"
                         type="tel"
-                        placeholder="0712 345 678"
+                        placeholder="0712345678"
                         value={phone}
                         onChange={handlePhoneChange}
-                        className="pl-11 h-12 text-base border-2 focus:border-primary"
                         maxLength={10}
+                        className="pl-10 h-11 focus:ring-2 focus:ring-primary"
                       />
                     </div>
-                    {phone.length > 0 && phone.length !== 10 && (
-                      <p className="text-xs text-muted-foreground">
-                        {10 - phone.length} digits remaining
-                      </p>
-                    )}
-                  </div>
+                  </motion.div>
 
-                  {/* Step 2: Select Package */}
-                  <div className="space-y-3">
-                    <div className="flex items-center gap-2 mb-2">
-                      <div className="flex items-center justify-center w-6 h-6 rounded-full bg-primary text-primary-foreground text-xs font-bold">
+                  {/* Step 2 */}
+                  <motion.div
+                    initial={{ opacity: 0, x: -20 }}
+                    whileInView={{ opacity: 1, x: 0 }}
+                    transition={{ delay: 0.1 }}
+                    viewport={{ once: true }}
+                    className="space-y-3"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="flex-shrink-0 flex items-center justify-center w-8 h-8 rounded-full bg-primary text-white font-bold text-sm">
                         2
                       </div>
-                      <Label className="font-semibold text-base">Select a Package</Label>
+                      <Label className="text-base font-semibold">
+                        Select Package
+                      </Label>
                     </div>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                      {packages.map((pkg) => (
-                        <PackageCard
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 ml-11">
+                      {packages.slice(0, 4).map((pkg) => (
+                        <motion.button
                           key={pkg.value}
-                          pkg={pkg}
-                          isSelected={amount === pkg.value}
-                          onSelect={() => setAmount(pkg.value)}
-                        />
+                          whileHover={{ scale: 1.05 }}
+                          whileTap={{ scale: 0.95 }}
+                          onClick={() => setAmount(pkg.value)}
+                          className={`p-3 rounded-lg border-2 transition-all text-center ${
+                            amount === pkg.value
+                              ? "border-primary bg-primary/10"
+                              : "border-border hover:border-primary/50"
+                          }`}
+                        >
+                          <div className="font-bold text-sm text-primary">
+                            KSh {pkg.price}
+                          </div>
+                          <div className="text-xs text-muted-foreground mt-1">
+                            {pkg.label}
+                          </div>
+                        </motion.button>
                       ))}
                     </div>
-                  </div>
+                  </motion.div>
 
-                  {/* Divider */}
-                  <div className="relative my-6">
-                    <div className="absolute inset-0 flex items-center">
-                      <div className="w-full h-px bg-gradient-to-r from-transparent via-border to-transparent" />
-                    </div>
-                  </div>
-
-                  {/* Step 3: Payment Button */}
-                  <div className="space-y-3">
-                    <div className="flex items-center gap-2 mb-2">
-                      <div className="flex items-center justify-center w-6 h-6 rounded-full bg-primary text-primary-foreground text-xs font-bold">
-                        3
+                  {/* Step 3 */}
+                  <motion.div
+                    initial={{ opacity: 0, x: -20 }}
+                    whileInView={{ opacity: 1, x: 0 }}
+                    transition={{ delay: 0.2 }}
+                    viewport={{ once: true }}
+                    className="space-y-3 pt-6 border-t"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="flex-shrink-0 flex items-center justify-center w-8 h-8 rounded-full bg-success text-white font-bold text-sm">
+                        <CheckCircle className="w-5 h-5" />
                       </div>
-                      <Label className="font-semibold text-base">Complete Payment</Label>
+                      <Label className="text-base font-semibold">
+                        Proceed to Payment
+                      </Label>
                     </div>
-                    <Button
-                      onClick={handlePayment}
-                      disabled={isLoading || phone.length !== 10}
-                      className="w-full h-14 text-base font-semibold bg-gradient-to-r from-primary to-blue-600 hover:shadow-xl hover:shadow-primary/30 transition-all duration-300 group"
-                      size="lg"
-                    >
-                      {isLoading ? (
-                        <>
-                          <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2" />
-                          Processing...
-                        </>
-                      ) : (
-                        <>
-                          <span className="flex items-center gap-2">
-                            Pay {packages.find((p) => p.value === amount)?.price}
-                            <ArrowRight className="w-5 h-5 transition-transform group-hover:translate-x-1" />
-                          </span>
-                        </>
-                      )}
-                    </Button>
-                    <p className="text-xs text-center text-muted-foreground">
-                      You'll receive an M-Pesa prompt on your phone
-                    </p>
-                  </div>
-
-                  <StatusDisplay status={status} />
+                    <div className="ml-11">
+                      <Button
+                        onClick={handlePayment}
+                        disabled={isLoading || phone.length !== 10 || !amount}
+                        variant="premium"
+                        size="lg"
+                        fullWidth
+                        loading={isLoading}
+                      >
+                        {!isLoading && (
+                          <>
+                            Pay KSh{" "}
+                            {packages.find((p) => p.value === amount)?.price}
+                            <ArrowRight className="w-4 h-4 ml-2" />
+                          </>
+                        )}
+                      </Button>
+                      <p className="text-xs text-muted-foreground text-center mt-3">
+                        🔒 256-bit SSL encrypted • M-Pesa verified
+                      </p>
+                    </div>
+                  </motion.div>
                 </CardContent>
               </Card>
-            </motion.div>
+            </div>
 
-            {/* Info Panels (Right) */}
-            <motion.div 
-              className="lg:col-span-2 space-y-6"
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.6, delay: 0.4 }}
+            {/* Info Cards */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              className="space-y-4"
             >
-              <DeviceInfoPanel macAddress={macAddress} />
-              <InfoPanel />
+              {/* Device Info */}
+              <Card variant="glass">
+                <CardContent className="pt-6">
+                  <h4 className="font-semibold mb-2">📱 Connected Device</h4>
+                  <code className="text-xs font-mono text-muted-foreground break-all">
+                    {macAddress || "Detecting..."}
+                  </code>
+                </CardContent>
+              </Card>
+
+              {/* Trust Signals */}
+              {[
+                { icon: "🔐", text: "SSL Encrypted" },
+                { icon: "✅", text: "M-Pesa Verified" },
+                { icon: "⚡", text: "Instant Setup" },
+              ].map((signal, i) => (
+                <motion.div
+                  key={i}
+                  initial={{ opacity: 0, x: 20 }}
+                  whileInView={{ opacity: 1, x: 0 }}
+                  transition={{ delay: i * 0.1 }}
+                  viewport={{ once: true }}
+                >
+                  <Card variant="glass">
+                    <CardContent className="pt-4">
+                      <div className="flex items-center gap-2 text-sm">
+                        <span className="text-lg">{signal.icon}</span>
+                        <span className="font-medium">{signal.text}</span>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </motion.div>
+              ))}
             </motion.div>
           </div>
+        </motion.section>
 
-          {/* Trust Indicators */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, delay: 0.5 }}
-          >
-            <TrustIndicators />
-          </motion.div>
-        </div>
+        {/* WHY CHOOSE US */}
+        <motion.section
+          initial={{ opacity: 0, y: 40 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6 }}
+          viewport={{ once: true, margin: "-100px" }}
+          className="py-16 lg:py-20"
+        >
+          <h2 className="text-3xl lg:text-4xl font-bold text-center mb-12">
+            Why Choose KIBARUANI
+          </h2>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {[
+              {
+                icon: Shield,
+                title: "Secure & Encrypted",
+                description: "Your payment is protected with 256-bit SSL encryption",
+              },
+              {
+                icon: Zap,
+                title: "Instant Activation",
+                description: "Connected to high-speed WiFi in under 30 seconds",
+              },
+              {
+                icon: Wifi,
+                title: "Reliable Network",
+                description: "99.9% uptime with 24/7 customer support",
+              },
+            ].map((feature, i) => {
+              const Icon = feature.icon
+              return (
+                <motion.div
+                  key={i}
+                  initial={{ opacity: 0, y: 20 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  transition={{ delay: i * 0.1 }}
+                  viewport={{ once: true }}
+                  whileHover={{ y: -4 }}
+                >
+                  <Card variant="interactive">
+                    <CardContent className="pt-8 text-center">
+                      <div className="inline-flex items-center justify-center w-14 h-14 rounded-lg bg-primary/10 mb-4">
+                        <Icon className="w-7 h-7 text-primary" />
+                      </div>
+                      <h3 className="text-lg font-semibold mb-2">
+                        {feature.title}
+                      </h3>
+                      <p className="text-sm text-muted-foreground">
+                        {feature.description}
+                      </p>
+                    </CardContent>
+                  </Card>
+                </motion.div>
+              )
+            })}
+          </div>
+        </motion.section>
+
+        {/* CTA Section */}
+        <motion.section
+          initial={{ opacity: 0 }}
+          whileInView={{ opacity: 1 }}
+          viewport={{ once: true }}
+          className="py-12 lg:py-16"
+        >
+          <Card variant="elevated" className="bg-gradient-to-r from-primary/10 to-secondary/10">
+            <CardContent className="p-12 md:p-16 text-center">
+              <h2 className="text-3xl lg:text-4xl font-bold mb-4">
+                Join Thousands of Happy Users
+              </h2>
+              <p className="text-lg text-muted-foreground max-w-2xl mx-auto mb-8">
+                Enjoy fast, reliable WiFi with instant M-Pesa payment
+              </p>
+              <Link href="/packages">
+                <Button variant="premium" size="lg">
+                  Browse All Plans
+                  <ArrowRight className="w-4 h-4 ml-2" />
+                </Button>
+              </Link>
+            </CardContent>
+          </Card>
+        </motion.section>
       </main>
-
-      <Footer />
-
-      {paymentData && (
-        <PaymentSuccessModal
-          isOpen={showSuccessModal}
-          onClose={() => setShowSuccessModal(false)}
-          paymentData={paymentData}
-        />
-      )}
     </div>
   )
 }
