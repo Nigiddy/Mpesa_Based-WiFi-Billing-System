@@ -31,6 +31,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const response = await apiClient.checkAuthStatus()
         if (response.success && response.admin) {
           setAuthState({ isAuthenticated: true, admin: response.admin, loading: false })
+          
+          // ✅ Fetch CSRF token for admin mutations
+          console.log("📛 Fetching CSRF token for admin dashboard...")
+          await apiClient.fetchCsrfToken()
         } else {
           setAuthState({ isAuthenticated: false, admin: null, loading: false })
         }
@@ -46,6 +50,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const response = await apiClient.login(email, password)
       if (response.success && response.admin) {
         setAuthState({ isAuthenticated: true, admin: response.admin, loading: false })
+        
+        // ✅ Fetch CSRF token after login
+        console.log("📛 Fetching CSRF token after login...")
+        await apiClient.fetchCsrfToken()
+        
         return { success: true }
       }
       return { success: false, error: response.error }
@@ -55,6 +64,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   const logout = async () => {
+    // ✅ Clear CSRF token on logout for security
+    apiClient.setCsrfToken(null)
     await apiClient.logout()
     setAuthState({ isAuthenticated: false, admin: null, loading: false })
   }

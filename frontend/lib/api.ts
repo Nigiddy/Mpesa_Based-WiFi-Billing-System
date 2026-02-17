@@ -56,14 +56,27 @@ export interface SystemStats {
 }
 
 class ApiClient {
+  private csrfToken: string | null = null
+
   private async request<T>(endpoint: string, options: RequestInit = {}): Promise<ApiResponse<T>> {
     try {
+      // Add CSRF token to mutation requests (POST, PUT, DELETE, PATCH)
+      const headers = {
+        "Content-Type": "application/json",
+        ...options.headers,
+      }
+
+      const method = (options.method || "GET").toUpperCase()
+      const isMutation = ["POST", "PUT", "DELETE", "PATCH"].includes(method)
+
+      // Include CSRF token for mutations if available
+      if (isMutation && this.csrfToken) {
+        headers["X-CSRF-Token"] = this.csrfToken
+      }
+
       const response = await fetch(`${API_BASE_URL}${endpoint}`, {
         credentials: 'include', // Send cookies with requests
-        headers: {
-          "Content-Type": "application/json",
-          ...options.headers,
-        },
+        headers,
         ...options,
       })
 
@@ -81,6 +94,29 @@ class ApiClient {
         error: error instanceof Error ? error.message : "Unknown error occurred",
       }
     }
+  }
+
+  // ✅ CSRF Token Management
+  async fetchCsrfToken(): Promise<string | null> {
+    try {
+      const response = await this.request<{ token: string }>("/admin/csrf-token")
+      if (response.success && response.data?.token) {
+        this.csrfToken = response.data.token
+        console.log("✅ CSRF token fetched successfully")
+        return this.csrfToken
+      }
+    } catch (error) {
+      console.error("❌ Failed to fetch CSRF token:", error)
+    }
+    return null
+  }
+
+  getCsrfToken(): string | null {
+    return this.csrfToken
+  }
+
+  setCsrfToken(token: string): void {
+    this.csrfToken = token
   }
 
   // Auth APIs
