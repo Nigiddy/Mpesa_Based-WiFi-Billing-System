@@ -57,7 +57,8 @@ export default function AdminDashboard() {
         status: "success",
         title: "User Connected",
         description: `${event.detail.phone} is now online`,
-        timestamp: new Date(),
+        timestamp: new Date().toLocaleTimeString(),
+        icon: <Users className="w-4 h-4" />,
       })
       fetchStats()
     }
@@ -72,7 +73,8 @@ export default function AdminDashboard() {
         status: "pending",
         title: "User Disconnected",
         description: `${event.detail.phone} went offline`,
-        timestamp: new Date(),
+        timestamp: new Date().toLocaleTimeString(),
+        icon: <Users className="w-4 h-4" />,
       })
       fetchStats()
     }
@@ -181,45 +183,49 @@ export default function AdminDashboard() {
                 transition={{ duration: 0.6, delay: 0.2 }}
               >
                 {isLoading ? (
-                  <SkeletonStatCards count={4} />
+                  <SkeletonStatCards />
                 ) : stats ? (
-                  <StatCardsGrid>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                     <PremiumStatCard
-                      icon={BarChart3}
-                      label="Total Revenue"
-                      value={`KSh${(stats.totalRevenue || 0).toLocaleString()}`}
-                      change={stats.revenueChange || 0}
-                      period={"vs last month"}
+                      icon={<BarChart3 className="w-6 h-6" />}
+                      label="Today's Revenue"
+                      value={`KSh${(stats.todayRevenue || 0).toLocaleString()}`}
+                      change={0}
+                      trend="neutral"
+                      period={"vs yesterday"}
                       gradient="from-primary to-blue-600"
                     />
                     <PremiumStatCard
-                      icon={Users}
+                      icon={<Users className="w-6 h-6" />}
                       label="Active Users"
                       value={stats.activeUsers || 0}
-                      change={stats.usersChange || 0}
-                      period={"vs last week"}
+                      change={0}
+                      trend="neutral"
+                      period={"vs last hour"}
                       gradient="from-green-500 to-emerald-600"
                     />
                     <PremiumStatCard
-                      icon={CreditCard}
-                      label="Transactions"
-                      value={stats.totalTransactions || 0}
-                      change={stats.transactionsChange || 0}
-                      period={"vs last month"}
+                      icon={<CreditCard className="w-6 h-6" />}
+                      label="Pending Payments"
+                      value={stats.pendingPayments || 0}
+                      change={0}
+                      trend="neutral"
+                      period={"Current"}
                       gradient="from-purple-500 to-pink-600"
                     />
                     <PremiumStatCard
-                      icon={Activity}
-                      label="System Uptime"
-                      value={`${stats.systemUptime || 99.9}%`}
+                      icon={<Activity className="w-6 h-6" />}
+                      label="Success Rate"
+                      value={`${stats.successRate || 100}%`}
                       change={0}
-                      period={"This month"}
+                      trend="neutral"
+                      period={"Average"}
                       gradient="from-orange-500 to-red-600"
                     />
-                  </StatCardsGrid>
+                  </div>
                 ) : (
                   <EmptyState
-                    icon={BarChart3}
+                    icon={<BarChart3 className="w-12 h-12" />}
                     title="No Data Available"
                     description="Unable to load system statistics"
                   />
@@ -257,22 +263,22 @@ export default function AdminDashboard() {
                     <>
                       <KPISummary
                         title="Revenue Today"
-                        value={`KSh${(stats.revenueTodaytoday || 0).toLocaleString()}`}
-                        unit="KES"
-                        icon={TrendingUp}
+                        value={`KSh${(stats.todayRevenue || 0).toLocaleString()}`}
+                        valueUnit="KES"
+                        icon={<TrendingUp className="w-5 h-5" />}
                         highlighted
                       />
                       <KPISummary
-                        title="New Users"
-                        value={stats.newUsersToday || 0}
-                        unit="users"
-                        icon={Users}
+                        title="Total Users"
+                        value={stats.totalUsers || 0}
+                        valueUnit="users"
+                        icon={<Users className="w-5 h-5" />}
                       />
                       <KPISummary
                         title="Success Rate"
-                        value={`${stats.successRate || 99.8}%`}
-                        unit="KES"
-                        icon={PieChart}
+                        value={`${stats.successRate || 100}%`}
+                        valueUnit=""
+                        icon={<PieChart className="w-5 h-5" />}
                       />
                     </>
                   )}
@@ -309,11 +315,10 @@ export default function AdminDashboard() {
                           <span className="text-sm font-medium">{item.label}</span>
                           <div className="flex items-center gap-2">
                             <div
-                              className={`w-2 h-2 rounded-full ${
-                                item.status === "good"
-                                  ? "bg-green-500"
-                                  : "bg-yellow-500"
-                              }`}
+                              className={`w-2 h-2 rounded-full ${item.status === "good"
+                                ? "bg-green-500"
+                                : "bg-yellow-500"
+                                }`}
                             />
                             <span className="text-sm text-muted-foreground">
                               {item.value}

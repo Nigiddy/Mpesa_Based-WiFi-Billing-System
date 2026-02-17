@@ -1,0 +1,65 @@
+app/about/page.tsx(346,13): error TS7019: Rest parameter 'classes' implicitly has an 'any[]' type.
+app/admin/layout.tsx(9,19): error TS2694: Namespace 'React' has no exported member 'Node'.
+app/admin/page.tsx(186,38): error TS2322: Type '{ count: number; }' is not assignable to type 'IntrinsicAttributes'.
+  Property 'count' does not exist on type 'IntrinsicAttributes'.
+app/admin/page.tsx(188,20): error TS2741: Property 'stats' is missing in type '{ children: Element[]; }' but required in type '{ stats: StatCardData[]; }'.
+app/admin/page.tsx(189,22): error TS2741: Property 'trend' is missing in type '{ icon: Element; label: string; value: string; change: any; period: string; gradient: string; }' but required in type 'StatCardData'.
+app/admin/page.tsx(192,43): error TS2551: Property 'totalRevenue' does not exist on type 'SystemStats'. Did you mean 'todayRevenue'?
+app/admin/page.tsx(193,37): error TS2339: Property 'revenueChange' does not exist on type 'SystemStats'.
+app/admin/page.tsx(197,22): error TS2741: Property 'trend' is missing in type '{ icon: Element; label: string; value: number; change: any; period: string; gradient: string; }' but required in type 'StatCardData'.
+app/admin/page.tsx(201,37): error TS2339: Property 'usersChange' does not exist on type 'SystemStats'.
+app/admin/page.tsx(205,22): error TS2741: Property 'trend' is missing in type '{ icon: Element; label: string; value: any; change: any; period: string; gradient: string; }' but required in type 'StatCardData'.
+app/admin/page.tsx(208,36): error TS2339: Property 'totalTransactions' does not exist on type 'SystemStats'.
+app/admin/page.tsx(209,37): error TS2339: Property 'transactionsChange' does not exist on type 'SystemStats'.
+app/admin/page.tsx(213,22): error TS2741: Property 'trend' is missing in type '{ icon: Element; label: string; value: string; change: number; period: string; gradient: string; }' but required in type 'StatCardData'.
+app/admin/page.tsx(216,39): error TS2339: Property 'systemUptime' does not exist on type 'SystemStats'.
+app/admin/page.tsx(262,45): error TS2339: Property 'revenueTodaytoday' does not exist on type 'SystemStats'.
+app/admin/page.tsx(263,25): error TS2322: Type '{ title: string; value: string; unit: string; icon: Element; highlighted: true; }' is not assignable to type 'IntrinsicAttributes & { title: string; value: string | number; valueUnit?: string | undefined; subtitle?: string | undefined; change?: number | undefined; icon?: ReactNode; highlighted?: boolean | undefined; }'.
+  Property 'unit' does not exist on type 'IntrinsicAttributes & { title: string; value: string | number; valueUnit?: string | undefined; subtitle?: string | undefined; change?: number | undefined; icon?: ReactNode; highlighted?: boolean | undefined; }'.
+app/admin/page.tsx(269,38): error TS2339: Property 'newUsersToday' does not exist on type 'SystemStats'.
+app/admin/page.tsx(270,25): error TS2322: Type '{ title: string; value: any; unit: string; icon: Element; }' is not assignable to type 'IntrinsicAttributes & { title: string; value: string | number; valueUnit?: string | undefined; subtitle?: string | undefined; change?: number | undefined; icon?: ReactNode; highlighted?: boolean | undefined; }'.
+  Property 'unit' does not exist on type 'IntrinsicAttributes & { title: string; value: string | number; valueUnit?: string | undefined; subtitle?: string | undefined; change?: number | undefined; icon?: ReactNode; highlighted?: boolean | undefined; }'.
+app/admin/page.tsx(276,25): error TS2322: Type '{ title: string; value: string; unit: string; icon: Element; }' is not assignable to type 'IntrinsicAttributes & { title: string; value: string | number; valueUnit?: string | undefined; subtitle?: string | undefined; change?: number | undefined; icon?: ReactNode; highlighted?: boolean | undefined; }'.
+  Property 'unit' does not exist on type 'IntrinsicAttributes & { title: string; value: string | number; valueUnit?: string | undefined; subtitle?: string | undefined; change?: number | undefined; icon?: ReactNode; highlighted?: boolean | undefined; }'.
+app/packages/page.tsx(125,13): error TS2322: Type '{ id: number; label: string; value: number; price: string; speed: string; popular: boolean; }[]' is not assignable to type 'PackageOption[]'.
+  Type '{ id: number; label: string; value: number; price: string; speed: string; popular: boolean; }' is not assignable to type 'PackageOption'.
+    Types of property 'price' are incompatible.
+      Type 'string' is not assignable to type 'number'.
+app/packages/page.tsx(127,52): error TS2322: Type 'string | number' is not assignable to type 'string'.
+  Type 'number' is not assignable to type 'string'.
+app/packages/page.tsx(147,35): error TS2322: Type '{ id: number; label: string; value: number; price: string; speed: string; popular: boolean; }[]' is not assignable to type 'PackageOption[]'.
+  Type '{ id: number; label: string; value: number; price: string; speed: string; popular: boolean; }' is not assignable to type 'PackageOption'.
+    Types of property 'price' are incompatible.
+      Type 'string' is not assignable to type 'number'.
+app/support/page.tsx(120,30): error TS7006: Parameter 'e' implicitly has an 'any' type.
+app/support/page.tsx(125,31): error TS7006: Parameter 'e' implicitly has an 'any' type.
+app/support/page.tsx(131,61): error TS2345: Argument of type '{ name: string; email: string; message: string; }' is not assignable to parameter of type '{ name: string; email: string; phone: string; subject: string; message: string; }'.
+  Type '{ name: string; email: string; message: string; }' is missing the following properties from type '{ name: string; email: string; phone: string; subject: string; message: string; }': phone, subject
+app/support/page.tsx(142,22): error TS18046: 'error' is of type 'unknown'.
+components/PaymentProcessingFlow.tsx(17,22): error TS2307: Cannot find module 'canvas-confetti' or its corresponding type declarations.
+components/PremiumPackageCard.tsx(69,7): error TS2322: Type '{ hidden: { opacity: number; y: number; }; visible: { opacity: number; y: number; transition: { duration: number; delay: number; ease: string; }; }; }' is not assignable to type 'Variants'.
+  Property 'visible' is incompatible with index signature.
+    Type '{ opacity: number; y: number; transition: { duration: number; delay: number; ease: string; }; }' is not assignable to type 'Variant'.
+      Type '{ opacity: number; y: number; transition: { duration: number; delay: number; ease: string; }; }' is not assignable to type 'TargetAndTransition'.
+        Type '{ opacity: number; y: number; transition: { duration: number; delay: number; ease: string; }; }' is not assignable to type '{ transition?: Transition<any> | undefined; transitionEnd?: ResolvedValues | undefined; }'.
+          Types of property 'transition' are incompatible.
+            Type '{ duration: number; delay: number; ease: string; }' is not assignable to type 'Transition<any> | undefined'.
+              Type '{ duration: number; delay: number; ease: string; }' is not assignable to type 'TransitionWithValueOverrides<any>'.
+                Type '{ duration: number; delay: number; ease: string; }' is not assignable to type 'ValueAnimationTransition<any>'.
+                  Types of property 'ease' are incompatible.
+                    Type 'string' is not assignable to type 'Easing | Easing[] | undefined'.
+components/admin/PaymentManagement.tsx(58,20): error TS7053: Element implicitly has an 'any' type because expression of type 'string' can't be used to index type '{ completed: { color: string; icon: ForwardRefExoticComponent<Omit<LucideProps, "ref"> & RefAttributes<SVGSVGElement>>; }; failed: { ...; }; pending: { ...; }; refunded: { ...; }; }'.
+  No index signature with a parameter of type 'string' was found on type '{ completed: { color: string; icon: ForwardRefExoticComponent<Omit<LucideProps, "ref"> & RefAttributes<SVGSVGElement>>; }; failed: { ...; }; pending: { ...; }; refunded: { ...; }; }'.
+components/packages/PackageOfferCard.tsx(9,36): error TS7031: Binding element 'pkg' implicitly has an 'any' type.
+components/packages/PackageOfferCard.tsx(76,32): error TS7006: Parameter 'feature' implicitly has an 'any' type.
+components/packages/PackageOfferCard.tsx(76,41): error TS7006: Parameter 'idx' implicitly has an 'any' type.
+hooks/use-auth.tsx(32,42): error TS2339: Property 'admin' does not exist on type 'ApiResponse<{ admin: any; }>'.
+hooks/use-auth.tsx(33,65): error TS2339: Property 'admin' does not exist on type 'ApiResponse<{ admin: any; }>'.
+hooks/use-auth.tsx(51,40): error TS2339: Property 'admin' does not exist on type 'ApiResponse<{ admin: any; }>'.
+hooks/use-auth.tsx(52,63): error TS2339: Property 'admin' does not exist on type 'ApiResponse<{ admin: any; }>'.
+hooks/use-auth.tsx(68,28): error TS2345: Argument of type 'null' is not assignable to parameter of type 'string'.
+hooks/use-payment.ts(92,40): error TS2339: Property 'paymentDetails' does not exist on type 'PaymentResponse'.
+hooks/use-payment.ts(96,48): error TS2339: Property 'paymentDetails' does not exist on type 'PaymentResponse'.
+hooks/use-payment.ts(104,40): error TS2339: Property 'message' does not exist on type 'PaymentResponse'.
+lib/api.ts(74,9): error TS7053: Element implicitly has an 'any' type because expression of type '"X-CSRF-Token"' can't be used to index type '{ "Content-Type": string; } | { length: number; toString(): string; toLocaleString(): string; toLocaleString(locales: string | string[], options?: (NumberFormatOptions & DateTimeFormatOptions) | undefined): string; ... 38 more ...; "Content-Type": string; } | { ...; } | { ...; }'.
+  Property 'X-CSRF-Token' does not exist on type '{ "Content-Type": string; } | { length: number; toString(): string; toLocaleString(): string; toLocaleString(locales: string | string[], options?: (NumberFormatOptions & DateTimeFormatOptions) | undefined): string; ... 38 more ...; "Content-Type": string; } | { ...; } | { ...; }'.
