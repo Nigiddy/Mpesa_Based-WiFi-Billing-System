@@ -1,19 +1,10 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import {
-  Activity,
-  Users,
-  CreditCard,
-  Settings,
-  TrendingUp,
-  TrendingDown,
-  BarChart3,
-  PieChart,
-} from "lucide-react"
+import { Activity, Users, CreditCard, Settings, BarChart3, PieChart } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { apiClient, type SystemStats, wsClient } from "@/lib/api"
 import { useDynamicTitle } from "@/hooks/use-dynamic-title"
 import AdminHeader from "@/components/admin/AdminHeader"
@@ -23,18 +14,12 @@ import PaymentManagement from "@/components/admin/PaymentManagement"
 import SystemSettings from "@/components/admin/SystemSettings"
 import { toast } from "sonner"
 import { motion } from "framer-motion"
-import {
-  StatCardsGrid,
-  PremiumStatCard,
-  RealtimeActivityFeed,
-  KPISummary,
-  EmptyState,
-  SkeletonStatCards,
-} from "@/components/AdminDashboardComponents"
 
-// Main Admin Dashboard Component
+// Note: Kept your custom imports that hold complex logic
+import { RealtimeActivityFeed } from "@/components/AdminDashboardComponents"
+
 export default function AdminDashboard() {
-  useDynamicTitle("Admin Dashboard")
+  useDynamicTitle("Admin Dashboard - Qonnect")
   const [activeTab, setActiveTab] = useState("overview")
   const [stats, setStats] = useState<SystemStats | null>(null)
   const [activityLog, setActivityLog] = useState<Array<any>>([])
@@ -43,38 +28,27 @@ export default function AdminDashboard() {
 
   useEffect(() => {
     fetchStats()
-    // Connect to WebSocket for real-time updates
     wsClient.connect()
 
-    // Listen for real-time updates
     const handleUserConnected = (event: CustomEvent) => {
-      toast.success("User connected", {
-        description: `${event.detail.phone} is now online`,
-      })
+      toast.success(`${event.detail.phone} is now online`)
       addActivityLog({
         id: Date.now(),
         type: "user_connected",
-        status: "success",
         title: "User Connected",
         description: `${event.detail.phone} is now online`,
         timestamp: new Date().toLocaleTimeString(),
-        icon: <Users className="w-4 h-4" />,
       })
       fetchStats()
     }
 
     const handleUserDisconnected = (event: CustomEvent) => {
-      toast.info("User disconnected", {
-        description: `${event.detail.phone} went offline`,
-      })
       addActivityLog({
         id: Date.now(),
         type: "user_disconnected",
-        status: "pending",
         title: "User Disconnected",
         description: `${event.detail.phone} went offline`,
         timestamp: new Date().toLocaleTimeString(),
-        icon: <Users className="w-4 h-4" />,
       })
       fetchStats()
     }
@@ -93,11 +67,8 @@ export default function AdminDashboard() {
     try {
       setIsLoading(true)
       const response = await apiClient.getSystemStats()
-      if (response.success && response.data) {
-        setStats(response.data)
-      }
+      if (response.success && response.data) setStats(response.data)
     } catch (error) {
-      console.error("Error fetching stats:", error)
       toast.error("Failed to fetch system stats")
     } finally {
       setIsLoading(false)
@@ -108,247 +79,141 @@ export default function AdminDashboard() {
     setActivityLog((prev) => [activity, ...prev.slice(0, 9)])
   }
 
+  // Helper for the clean stat cards
+  const metrics = [
+    { label: "Today's Revenue", value: `KSh ${(stats?.todayRevenue || 0).toLocaleString()}`, icon: BarChart3 },
+    { label: "Active Users", value: stats?.activeUsers || 0, icon: Users },
+    { label: "Pending Payments", value: stats?.pendingPayments || 0, icon: CreditCard },
+    { label: "Success Rate", value: `${stats?.successRate || 100}%`, icon: PieChart },
+  ]
+
   return (
-    <>
-      <div className="min-h-screen bg-gradient-to-br from-background via-background to-primary/5">
-        <AdminHeader>
-          {admin && (
-            <div className="flex items-center gap-4 ml-auto">
-              <span className="text-sm text-muted-foreground">{admin.email}</span>
-              <Button variant="outline" size="sm" onClick={logout}>
-                Logout
-              </Button>
-            </div>
-          )}
-        </AdminHeader>
-        <main className="container mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          {/* Header Section */}
-          <motion.div
-            initial={{ opacity: 0, y: -20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6 }}
-            className="mb-12 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6"
-          >
-            <div>
-              <h1 className="text-4xl lg:text-5xl font-bold mb-2 gradient-text">
-                System Dashboard
-              </h1>
-              <p className="text-muted-foreground">
-                Real-time monitoring and management of your WiFi billing system
-              </p>
-            </div>
-            {admin && (
-              <div className="flex flex-col items-end gap-1">
-                <span className="text-xs text-muted-foreground">Admin Account</span>
-                <span className="font-semibold text-foreground">{admin.email}</span>
-              </div>
-            )}
-          </motion.div>
+    <div className="min-h-screen bg-background">
+      <AdminHeader>
+        {admin && (
+          <div className="flex items-center gap-4 ml-auto">
+            <span className="text-sm font-medium text-muted-foreground">{admin.email}</span>
+            <Button variant="secondary" size="sm" onClick={logout} className="h-8">
+              Logout
+            </Button>
+          </div>
+        )}
+      </AdminHeader>
 
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-8">
-            {/* Tab Navigation */}
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ duration: 0.6, delay: 0.1 }}
-            >
-              <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4 bg-muted/50 backdrop-blur-sm border border-border/50 p-1 h-auto gap-1">
-                {[
-                  { value: "overview", icon: Activity, label: "Overview" },
-                  { value: "payments", icon: CreditCard, label: "Payments" },
-                  { value: "users", icon: Users, label: "Users" },
-                  { value: "settings", icon: Settings, label: "Settings" },
-                ].map((tab) => {
-                  const Icon = tab.icon
-                  return (
-                    <TabsTrigger
-                      key={tab.value}
-                      value={tab.value}
-                      className="flex items-center gap-2 data-[state=active]:bg-background data-[state=active]:shadow-md transition-all"
-                    >
-                      <Icon className="h-4 w-4" />
-                      <span className="hidden sm:inline">{tab.label}</span>
-                    </TabsTrigger>
-                  )
-                })}
-              </TabsList>
-            </motion.div>
+      <main className="container mx-auto px-4 sm:px-6 lg:px-8 py-10 max-w-7xl">
+        
+        {/* Clean Header */}
+        <div className="mb-10 flex flex-col sm:flex-row items-start sm:items-end justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-bold text-foreground tracking-tight mb-1">
+              Dashboard
+            </h1>
+            <p className="text-sm text-muted-foreground">
+              Monitor and manage your network in real-time.
+            </p>
+          </div>
+        </div>
 
-            {/* OVERVIEW TAB */}
-            <TabsContent value="overview" className="space-y-8">
-              {/* Key Metrics Grid */}
-              <motion.section
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.6, delay: 0.2 }}
-              >
-                {isLoading ? (
-                  <SkeletonStatCards />
-                ) : stats ? (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                    <PremiumStatCard
-                      icon={<BarChart3 className="w-6 h-6" />}
-                      label="Today's Revenue"
-                      value={`KSh${(stats.todayRevenue || 0).toLocaleString()}`}
-                      change={0}
-                      trend="neutral"
-                      period={"vs yesterday"}
-                      gradient="from-primary to-blue-600"
-                    />
-                    <PremiumStatCard
-                      icon={<Users className="w-6 h-6" />}
-                      label="Active Users"
-                      value={stats.activeUsers || 0}
-                      change={0}
-                      trend="neutral"
-                      period={"vs last hour"}
-                      gradient="from-green-500 to-emerald-600"
-                    />
-                    <PremiumStatCard
-                      icon={<CreditCard className="w-6 h-6" />}
-                      label="Pending Payments"
-                      value={stats.pendingPayments || 0}
-                      change={0}
-                      trend="neutral"
-                      period={"Current"}
-                      gradient="from-purple-500 to-pink-600"
-                    />
-                    <PremiumStatCard
-                      icon={<Activity className="w-6 h-6" />}
-                      label="Success Rate"
-                      value={`${stats.successRate || 100}%`}
-                      change={0}
-                      trend="neutral"
-                      period={"Average"}
-                      gradient="from-orange-500 to-red-600"
-                    />
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-8">
+          
+          {/* Minimalist Tabs */}
+          <TabsList className="bg-transparent border-b border-border w-full justify-start h-auto p-0 rounded-none gap-6 overflow-x-auto">
+            {[
+              { value: "overview", icon: Activity, label: "Overview" },
+              { value: "payments", icon: CreditCard, label: "Payments" },
+              { value: "users", icon: Users, label: "Users" },
+              { value: "settings", icon: Settings, label: "Settings" },
+            ].map((tab) => {
+              const Icon = tab.icon
+              return (
+                <TabsTrigger
+                  key={tab.value}
+                  value={tab.value}
+                  className="flex items-center gap-2 rounded-none border-b-2 border-transparent px-0 py-3 data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none text-muted-foreground data-[state=active]:text-foreground transition-colors"
+                >
+                  <Icon className="w-4 h-4" />
+                  <span className="font-medium">{tab.label}</span>
+                </TabsTrigger>
+              )
+            })}
+          </TabsList>
+
+          {/* OVERVIEW TAB */}
+          <TabsContent value="overview" className="space-y-8 outline-none">
+            
+            {/* Top Metrics Grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
+              {metrics.map((metric, i) => {
+                const Icon = metric.icon
+                return (
+                  <div key={i} className="bg-card border border-border/50 rounded-xl p-5 shadow-sm flex flex-col justify-between">
+                    <div className="flex items-center justify-between mb-4">
+                      <span className="text-sm font-medium text-muted-foreground">{metric.label}</span>
+                      <Icon className="w-4 h-4 text-primary/60" />
+                    </div>
+                    <div className="text-2xl font-bold text-foreground">
+                      {isLoading ? "..." : metric.value}
+                    </div>
                   </div>
-                ) : (
-                  <EmptyState
-                    icon={<BarChart3 className="w-12 h-12" />}
-                    title="No Data Available"
-                    description="Unable to load system statistics"
-                  />
-                )}
-              </motion.section>
+                )
+              })}
+            </div>
 
-              {/* Charts and Activity Section */}
-              <motion.section
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.6, delay: 0.3 }}
-                className="grid lg:grid-cols-3 gap-8"
-              >
-                {/* Real-time Activity Feed */}
-                <div className="lg:col-span-2">
-                  <Card variant="elevated">
-                    <CardHeader>
-                      <CardTitle className="flex items-center gap-2">
-                        <Activity className="w-5 h-5 text-primary" />
-                        System Activity
-                      </CardTitle>
-                      <CardDescription>
-                        Real-time events from the platform
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                      <RealtimeActivityFeed activities={activityLog} />
-                    </CardContent>
-                  </Card>
-                </div>
-
-                {/* Quick Stats Summary */}
-                <div className="space-y-4">
-                  {stats && (
-                    <>
-                      <KPISummary
-                        title="Revenue Today"
-                        value={`KSh${(stats.todayRevenue || 0).toLocaleString()}`}
-                        valueUnit="KES"
-                        icon={<TrendingUp className="w-5 h-5" />}
-                        highlighted
-                      />
-                      <KPISummary
-                        title="Total Users"
-                        value={stats.totalUsers || 0}
-                        valueUnit="users"
-                        icon={<Users className="w-5 h-5" />}
-                      />
-                      <KPISummary
-                        title="Success Rate"
-                        value={`${stats.successRate || 100}%`}
-                        valueUnit=""
-                        icon={<PieChart className="w-5 h-5" />}
-                      />
-                    </>
-                  )}
-                </div>
-              </motion.section>
-
-              {/* System Health */}
-              <motion.section
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.6, delay: 0.4 }}
-              >
-                <Card variant="glass">
-                  <CardHeader>
-                    <CardTitle>System Health</CardTitle>
+            {/* Layout Grid for Feed & Health */}
+            <div className="grid lg:grid-cols-3 gap-6 sm:gap-8">
+              
+              {/* Activity Feed */}
+              <div className="lg:col-span-2">
+                <Card className="border-border/50 shadow-sm h-full">
+                  <CardHeader className="pb-4">
+                    <CardTitle className="text-lg font-semibold flex items-center gap-2">
+                      <Activity className="w-4 h-4 text-primary" />
+                      Live Activity
+                    </CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <div className="space-y-4">
+                    {/* Assuming this component renders a simple list. If it has heavy styles inside, it may need refining too! */}
+                    <RealtimeActivityFeed activities={activityLog} />
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* System Health */}
+              <div>
+                <Card className="border-border/50 shadow-sm h-full">
+                  <CardHeader className="pb-4">
+                    <CardTitle className="text-lg font-semibold">System Health</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-0 divide-y divide-border/40">
                       {[
-                        { label: "API Response Time", value: "142ms", status: "good" },
-                        {
-                          label: "Database Connection",
-                          value: "Active",
-                          status: "good",
-                        },
-                        { label: "M-Pesa Integration", value: "Connected", status: "good" },
-                        {
-                          label: "SSL Certificate",
-                          value: "Valid until 2026",
-                          status: "good",
-                        },
+                        { label: "API Response", value: "142ms", status: "good" },
+                        { label: "Database", value: "Active", status: "good" },
+                        { label: "M-Pesa API", value: "Connected", status: "good" },
+                        { label: "SSL Status", value: "Valid", status: "good" },
                       ].map((item, i) => (
-                        <div key={i} className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
-                          <span className="text-sm font-medium">{item.label}</span>
+                        <div key={i} className="flex items-center justify-between py-3">
+                          <span className="text-sm text-muted-foreground">{item.label}</span>
                           <div className="flex items-center gap-2">
-                            <div
-                              className={`w-2 h-2 rounded-full ${item.status === "good"
-                                ? "bg-green-500"
-                                : "bg-yellow-500"
-                                }`}
-                            />
-                            <span className="text-sm text-muted-foreground">
-                              {item.value}
-                            </span>
+                            <div className={`w-2 h-2 rounded-full ${item.status === "good" ? "bg-green-500" : "bg-yellow-500"}`} />
+                            <span className="text-sm font-medium text-foreground">{item.value}</span>
                           </div>
                         </div>
                       ))}
                     </div>
                   </CardContent>
                 </Card>
-              </motion.section>
-            </TabsContent>
+              </div>
 
-            {/* PAYMENTS TAB */}
-            <TabsContent value="payments">
-              <PaymentManagement />
-            </TabsContent>
+            </div>
+          </TabsContent>
 
-            {/* USERS TAB */}
-            <TabsContent value="users">
-              <UserManagement />
-            </TabsContent>
-
-            {/* SETTINGS TAB */}
-            <TabsContent value="settings">
-              <SystemSettings />
-            </TabsContent>
-          </Tabs>
-        </main>
-      </div>
-    </>
+          {/* OTHER TABS */}
+          <TabsContent value="payments" className="outline-none"><PaymentManagement /></TabsContent>
+          <TabsContent value="users" className="outline-none"><UserManagement /></TabsContent>
+          <TabsContent value="settings" className="outline-none"><SystemSettings /></TabsContent>
+        </Tabs>
+      </main>
+    </div>
   )
 }
