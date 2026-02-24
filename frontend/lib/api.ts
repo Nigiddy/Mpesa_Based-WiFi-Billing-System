@@ -151,14 +151,14 @@ class ApiClient {
 
   // Payment APIs
   async initiatePayment(paymentData: PaymentRequest): Promise<ApiResponse<PaymentResponse>> {
-    return this.request("/api/payments/initiate", {
+    return this.request("/api/v1/payments/initiate", {
       method: "POST",
       body: JSON.stringify(paymentData),
     })
   }
 
   async checkPaymentStatus(transactionId: string): Promise<ApiResponse<PaymentResponse>> {
-    return this.request(`/api/payments/status/${transactionId}`)
+    return this.request(`/api/v1/payments/status/${transactionId}`)
   }
 
   async getPaymentHistory(phone: string): Promise<ApiResponse<Transaction[]>> {

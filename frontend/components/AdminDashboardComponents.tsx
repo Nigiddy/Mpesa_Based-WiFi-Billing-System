@@ -210,7 +210,7 @@ export const RealtimeActivityFeed = ({
     <Card variant="elevated">
       <CardHeader>
         <div className="flex items-center justify-between">
-          <CardTitle>📊 Live Activity Feed</CardTitle>
+          <CardTitle> Live Activity Feed</CardTitle>
           {isLive && (
             <motion.div
               animate={{ opacity: [1, 0.5, 1] }}
