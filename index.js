@@ -19,6 +19,7 @@ const mpesaRoutesV1 = require("./routes/mpesaRoutes.v1");
 const mpesaCallbackV2 = require("./routes/mpesaCallback.v2");
 const authRoutes = require("./routes/auth");
 const adminRoutes = require("./routes/admin");
+const sessionRoutes = require("./routes/session");
 const { authLimiter, paymentLimiter, apiLimiter } = require("./middleware/rateLimit");
 
 // ✅ Background workers
@@ -76,6 +77,7 @@ app.use("/api", apiLimiter);
 
 // Admin Routes
 app.use("/api", adminRoutes);
+app.use("/api", sessionRoutes);
 
 // ✅ Register Routes (v1 and v2 versioned)
 app.use("/api/v1", mpesaRoutesV1); // Secure payment endpoints with validation

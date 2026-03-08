@@ -14,6 +14,7 @@ export function usePayment() {
   const [status, setStatus] = useState<"pending" | "completed" | "failed" | "">("")
   const [isLoading, setIsLoading] = useState(false)
   const [macAddress, setMacAddress] = useState("Loading...")
+  const [hasActiveSession, setHasActiveSession] = useState(false)
   const [showSuccessModal, setShowSuccessModal] = useState(false)
   const [paymentData, setPaymentData] = useState<any>(null)
   const searchParams = useSearchParams()
@@ -22,6 +23,17 @@ export function usePayment() {
     const macFromUrl = searchParams.get("mac")
     if (macFromUrl) {
       setMacAddress(macFromUrl)
+      // Check for active session
+      apiClient.checkSessionStatus(macFromUrl).then(response => {
+        if (response.success && response.data?.hasActiveSession) {
+          setHasActiveSession(true)
+          console.log("User has active session, expires at:", response.data.expiresAt)
+          // Here you could redirect or show a different UI
+          toast.info("You already have an active session.", {
+            description: `It expires at ${new Date(response.data.expiresAt!).toLocaleString()}`,
+          })
+        }
+      })
     } else {
       setMacAddress("UNAVAILABLE")
       toast.error("Device MAC Address not found.", {
@@ -134,6 +146,7 @@ export function usePayment() {
     status,
     isLoading,
     macAddress,
+    hasActiveSession,
     showSuccessModal,
     paymentData,
     handlePhoneChange,

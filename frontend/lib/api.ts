@@ -137,6 +137,10 @@ class ApiClient {
     return this.request("/auth/admin/me")
   }
 
+  async checkSessionStatus(macAddress: string): Promise<ApiResponse<{ hasActiveSession: boolean; expiresAt?: string }>> {
+    return this.request(`/api/session/status?mac=${macAddress}`);
+  }
+
   // Payment APIs
   async initiatePayment(paymentData: PaymentRequest): Promise<ApiResponse<PaymentResponse>> {
     return this.request("/api/v1/payments/initiate", {
