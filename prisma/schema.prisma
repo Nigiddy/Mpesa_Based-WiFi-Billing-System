@@ -100,6 +100,7 @@ model Payment {
   @@index([status])
   @@index([createdAt])
   @@index([status, createdAt])
+  @@index([phone, status, createdAt])
 }
 
 // ✅ NEW: Track payment status changes for immutability

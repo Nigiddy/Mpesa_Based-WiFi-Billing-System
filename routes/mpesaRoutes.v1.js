@@ -61,32 +61,13 @@ router.post(
       const crypto = require('crypto');
       const transactionId = `TXN_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
 
-      // Create payment record with "pending" status
-      const payment = await prisma.payment.create({
-        data: {
-          phone,
-          amount,
-          transactionId,
-          macAddress: mac,
-          status: PaymentStatus.PENDING,
-          ipAddress: req.ip
-        }
-      });
-
-      console.log(`📝 Payment created: ${transactionId} for ${phone}`);
-
-      // Call M-Pesa STK Push API
+      // Step 1: Call M-Pesa STK Push API FIRST
+      console.log(`Initiating STK Push for ${phone} with amount ${amount}`);
       const mpesaResponse = await stkPush(phone, amount, transactionId);
 
       if (!mpesaResponse || !mpesaResponse.CheckoutRequestID) {
-        // Mark payment as failed if STK Push fails
-        await prisma.payment.update({
-          where: { id: payment.id },
-          data: { status: PaymentStatus.FAILED }
-        });
-
-        console.error(`❌ STK Push failed for ${transactionId}`);
-
+        console.error(`❌ STK Push failed for transaction attempt ${transactionId}. M-Pesa API returned no CheckoutRequestID.`);
+        // Do not create a payment record if the API call itself fails.
         return res.status(500).json({
           success: false,
           error: 'Failed to initiate payment',
@@ -95,16 +76,24 @@ router.post(
             : 'M-Pesa API returned no CheckoutRequestID'
         });
       }
+      
+      console.log(`✅ STK Push sent: ${transactionId} → ${mpesaResponse.CheckoutRequestID}`);
 
-      // Update payment record with M-Pesa reference
-      await prisma.payment.update({
-        where: { id: payment.id },
+      // Step 2: Create the payment record in one atomic operation
+      const payment = await prisma.payment.create({
         data: {
-          mpesaRef: mpesaResponse.CheckoutRequestID
+          phone,
+          amount,
+          transactionId,
+          macAddress: mac,
+          status: PaymentStatus.PENDING,
+          ipAddress: req.ip,
+          mpesaRef: mpesaResponse.CheckoutRequestID // Save the reference immediately
         }
       });
+      console.log(`📝 Payment record created: ${transactionId}`);
 
-      // Schedule a job to time out the payment if no callback is received
+      // Step 3: Schedule a job to time out the payment if no callback is received
       const paymentTimeoutQueue = getPaymentTimeoutQueue();
       if (paymentTimeoutQueue) {
         await paymentTimeoutQueue.add(
@@ -118,8 +107,6 @@ router.post(
         );
         console.log(`⏳ Timeout job scheduled for ${payment.transactionId}`);
       }
-
-      console.log(`✅ STK Push sent: ${transactionId} → ${mpesaResponse.CheckoutRequestID}`);
 
       return res.json({
         success: true,
