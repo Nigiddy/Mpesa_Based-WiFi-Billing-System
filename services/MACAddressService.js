@@ -152,7 +152,7 @@ async function detectPotentialSpoofing(mac, ip) {
  * @param {Object} params - { mac, phone, ip, expiryTime, sessionDuration }
  * @returns {Promise<Object>}
  */
-async function registerOrExtendMACSession(params) {
+async function registerOrExtendMACSession(params, prismaClient = prisma) {
   const { mac, phone, ip, expiryDuration, paymentId } = params;
 
   try {
@@ -163,7 +163,7 @@ async function registerOrExtendMACSession(params) {
       return { success: false, error: formatValidation.error };
     }
 
-    const activeSession = await prisma.session.findFirst({
+    const activeSession = await prismaClient.session.findFirst({
       where: {
         macAddress: normalizedMAC,
         disconnectedAt: null,
@@ -174,7 +174,7 @@ async function registerOrExtendMACSession(params) {
     if (activeSession) {
       // Extend the existing session
       const newExpiryTime = new Date(activeSession.expiryTime.getTime() + expiryDuration);
-      const updatedSession = await prisma.session.update({
+      const updatedSession = await prismaClient.session.update({
         where: { id: activeSession.id },
         data: {
           expiryTime: newExpiryTime,
@@ -190,7 +190,7 @@ async function registerOrExtendMACSession(params) {
       };
     } else {
       // Create a new session
-      const user = await prisma.user.upsert({
+      const user = await prismaClient.user.upsert({
         where: { phone },
         update: { lastSeen: new Date() },
         create: {
@@ -201,7 +201,7 @@ async function registerOrExtendMACSession(params) {
       });
 
       const newExpiryTime = new Date(Date.now() + expiryDuration);
-      const newSession = await prisma.session.create({
+      const newSession = await prismaClient.session.create({
         data: {
           userId: user.id,
           macAddress: normalizedMAC,

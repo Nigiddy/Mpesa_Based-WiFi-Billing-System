@@ -120,22 +120,35 @@ function validateCallbackStructure(body) {
 
   if (!body?.Body?.stkCallback) {
     errors.push('Invalid callback structure: missing Body.stkCallback');
+    return { valid: false, errors }; // Early exit if base structure is wrong
   }
 
-  const callback = body?.Body?.stkCallback;
+  const callback = body.Body.stkCallback;
 
-  if (!callback?.CheckoutRequestID) {
+  if (!callback.CheckoutRequestID) {
     errors.push('Missing CheckoutRequestID');
   }
 
-  if (callback?.ResultCode === undefined && callback?.ResultCode === null) {
+  if (callback.ResultCode === undefined || callback.ResultCode === null) {
     errors.push('Missing ResultCode');
   }
 
-  if (callback?.ResultCode === 0) {
-    // Success - validate metadata
-    if (!callback?.CallbackMetadata?.Item || !Array.isArray(callback.CallbackMetadata.Item)) {
-      errors.push('Invalid CallbackMetadata structure');
+  // If the transaction was successful, we must have the metadata
+  if (callback.ResultCode === 0) {
+    const metadata = callback.CallbackMetadata?.Item;
+    if (!metadata || !Array.isArray(metadata) || metadata.length === 0) {
+      errors.push('Missing or invalid CallbackMetadata for successful payment');
+    } else {
+      // Check for essential items within the metadata array
+      const hasAmount = metadata.some(item => item.Name === 'Amount' && item.Value !== undefined);
+      const hasReceipt = metadata.some(item => item.Name === 'MpesaReceiptNumber' && item.Value !== undefined);
+
+      if (!hasAmount) {
+        errors.push('Missing "Amount" in CallbackMetadata');
+      }
+      if (!hasReceipt) {
+        errors.push('Missing "MpesaReceiptNumber" in CallbackMetadata');
+      }
     }
   }
 

@@ -214,14 +214,8 @@ async function setupPaymentWorker() {
           throw new Error(`M-Pesa API verification failed: ${apiVerification.error}`);
         }
 
-        // ✅ STEP 6: Extract M-Pesa receipt number
-        const mpesaReceipt = callbackData?.CallbackMetadata?.Item?.find(
-          (item) => item?.Name === 'MpesaReceiptNumber'
-        )?.Value;
-
+        // ✅ STEP 6: Atomically create session and update payment
         const { getPackageByAmount } = require('../lib/packages');
-
-        // ✅ STEP 7: Get package details for expiry calculation
         const pkg = getPackageByAmount(payment.amount);
 
         if (!pkg) {
@@ -230,55 +224,74 @@ async function setupPaymentWorker() {
         }
         const { duration: expiryDuration, timeLabel } = pkg;
 
-
         const { registerOrExtendMACSession } = require('../services/MACAddressService');
+        const mpesaReceipt = callbackData?.CallbackMetadata?.Item?.find(
+          (item) => item?.Name === 'MpesaReceiptNumber'
+        )?.Value;
 
-        const sessionResult = await registerOrExtendMACSession({
-          mac: payment.macAddress,
-          phone: payment.phone,
-          ip: payment.ipAddress,
-          expiryDuration,
-          paymentId: payment.id,
-        });
+        let sessionResult;
+        try {
+          console.log('Beginning database transaction...');
+          sessionResult = await prisma.$transaction(async (tx) => {
+            const sessionDetails = await registerOrExtendMACSession(
+              {
+                mac: payment.macAddress,
+                phone: payment.phone,
+                ip: payment.ipAddress,
+                expiryDuration,
+                paymentId: payment.id,
+              },
+              tx // Pass the transaction client to the service
+            );
 
-        if (!sessionResult.success) {
-          throw new Error(`Failed to register or extend session: ${sessionResult.error}`);
+            if (!sessionDetails.success) {
+              // This will cause the transaction to roll back
+              throw new Error(`Failed to register/extend session: ${sessionDetails.error}`);
+            }
+
+            // Mark payment as completed within the same transaction
+            await tx.payment.update({
+              where: { id: payment.id },
+              data: {
+                status: 'completed',
+                mpesaRef: mpesaReceipt || checkoutId,
+                expiresAt: sessionDetails.expiresAt,
+              },
+            });
+            
+            console.log('✅ DB Transaction: Payment marked as completed and session created/extended.');
+            return sessionDetails;
+          });
+          
+          logAudit('payment_db_transaction_success', {
+            checkoutId,
+            phone: payment.phone,
+            amount: payment.amount,
+            mpesaReceipt,
+            sessionAction: sessionResult.action,
+          });
+
+        } catch (transactionError) {
+          console.error(`❌ Database transaction failed: ${transactionError.message}`);
+          logAudit('payment_db_transaction_failed', { checkoutId, error: transactionError.message });
+          // Re-throw to let BullMQ handle the retry
+          throw transactionError;
         }
 
-        // ✅ STEP 8: Mark payment as completed
-        await prisma.payment.update({
-          where: { id: payment.id },
-          data: {
-            status: 'completed',
-            mpesaRef: mpesaReceipt || checkoutId,
-            expiresAt: sessionResult.expiresAt,
-          },
-        });
-
-        console.log(`✅ Payment marked as completed: ${checkoutId}`);
-        logAudit('payment_completed', {
-          checkoutId,
-          phone: payment.phone,
-          amount: payment.amount,
-          mpesaReceipt,
-          sessionAction: sessionResult.action,
-        });
-
-        // ✅ STEP 9: Whitelist MAC address
-        console.log(`🔓 Whitelisting MAC: ${payment.macAddress}`);
+        // ✅ STEP 7: Whitelist MAC address (External service call, outside of DB transaction)
+        console.log(`🔓 Whitelisting MAC on router: ${payment.macAddress}`);
         const { whitelistMAC } = require('../config/mikrotik');
+        const mikrotikResult = await whitelistMAC(payment.macAddress, timeLabel);
 
+        if (!mikrotikResult.success) {
+          // The core payment is already committed. We just flag that this part failed.
+          console.error(`⚠️ MAC whitelist failed after successful payment: ${mikrotikResult.message}`);
 
-    const mikrotikResult = await whitelistMAC(payment.macAddress, timeLabel);
-
-    if (!mikrotikResult.success) {
-      // Payment completed but MAC not whitelisted - partial failure
-      console.error(`⚠️ MAC whitelist failed: ${mikrotikResult.message}`);
-
-      await prisma.payment.update({
-        where: { id: payment.id },
-        data: { status: 'completed_but_mac_failed' }
-      });
+          // Update status in a separate, non-transactional call
+          await prisma.payment.update({
+            where: { id: payment.id },
+            data: { status: 'completed_but_mac_failed' }
+          });
 
           logAudit('payment_mac_whitelist_failed', {
             checkoutId,
@@ -289,6 +302,7 @@ async function setupPaymentWorker() {
           // Alert admin - manual intervention needed
           console.error('🚨 ALERT: Payment completed but MAC whitelisting failed. Manual intervention required.');
 
+          // Return a specific status but don't re-throw; the payment itself was successful.
           return {
             status: 'completed_but_mac_failed',
             message: mikrotikResult.message
@@ -296,6 +310,7 @@ async function setupPaymentWorker() {
         }
 
         console.log(`✅ MAC whitelisted successfully`);
+        logAudit('payment_mac_whitelist_success', { checkoutId, mac: payment.macAddress });
 
         return {
           status: 'success',

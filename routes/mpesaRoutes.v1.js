@@ -12,6 +12,8 @@ const { stkPush } = require("../config/mpesa");
 const { validatePaymentInitiationMiddleware } = require("../middleware/validationMiddleware");
 const { paymentLimiter } = require("../middleware/rateLimit");
 
+const { getPaymentTimeoutQueue } = require("../workers/timeoutWorkers");
+
 const router = express.Router();
 
 /**
@@ -100,6 +102,21 @@ router.post(
           mpesaRef: mpesaResponse.CheckoutRequestID
         }
       });
+
+      // Schedule a job to time out the payment if no callback is received
+      const paymentTimeoutQueue = getPaymentTimeoutQueue();
+      if (paymentTimeoutQueue) {
+        await paymentTimeoutQueue.add(
+          'check-timeout',
+          { transactionId: payment.transactionId },
+          {
+            delay: 100000, // 100 seconds
+            removeOnComplete: true,
+            jobId: `timeout-${payment.transactionId}` // Deduplication
+          }
+        );
+        console.log(`⏳ Timeout job scheduled for ${payment.transactionId}`);
+      }
 
       console.log(`✅ STK Push sent: ${transactionId} → ${mpesaResponse.CheckoutRequestID}`);
 

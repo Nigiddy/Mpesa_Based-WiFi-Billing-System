@@ -21,12 +21,12 @@ const paymentTimeoutWorker = new Worker('payment-timeout', async (job) => {
 
     // If payment is still pending, mark it as expired.
     // This is a safety check. If the payment was completed, its status would have changed.
-    if (payment && payment.status === 'PENDING') {
+    if (payment && payment.status.toLowerCase() === 'pending') {
       await prisma.payment.update({
         where: { id: payment.id },
-        data: { status: 'EXPIRED', failedAt: new Date() },
+        data: { status: 'expired', failedAt: new Date() },
       });
-      console.log(`  ✅ Transaction ${transactionId} marked as EXPIRED.`);
+      console.log(`  ✅ Transaction ${transactionId} marked as expired.`);
       logAudit('PAYMENT_TIMEOUT_AUTO', { transactionId });
     }
   } catch (error) {
