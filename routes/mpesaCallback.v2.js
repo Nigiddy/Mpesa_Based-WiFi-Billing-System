@@ -219,81 +219,66 @@ async function setupPaymentWorker() {
           (item) => item?.Name === 'MpesaReceiptNumber'
         )?.Value;
 
+        const { getPackageByAmount } = require('../lib/packages');
+
         // ✅ STEP 7: Get package details for expiry calculation
-        const PACKAGES = {
-          '10': 1 * 60 * 60 * 1000,      // 1 hour
-          '15': 4 * 60 * 60 * 1000,      // 4 hours
-          '20': 12 * 60 * 60 * 1000,     // 12 hours
-          '30': 24 * 60 * 60 * 1000      // 24 hours
-        };
+        const pkg = getPackageByAmount(payment.amount);
 
-        const expiryDuration = PACKAGES[String(payment.amount)];
-
-        if (!expiryDuration) {
+        if (!pkg) {
           console.error(`❌ Invalid package amount: ${payment.amount}`);
           throw new Error(`Unknown package amount: ${payment.amount}`);
         }
+        const { duration: expiryDuration, timeLabel } = pkg;
 
-        // ✅ STEP 8: Mark as completed in atomic transaction
-        const result = await prisma.$transaction(async (tx) => {
-          // Double-check status hasn't changed (race condition prevention)
-          const current = await tx.payment.findUnique({
-            where: { id: payment.id }
-          });
 
-          if (current.status !== 'pending') {
-            console.log(`ℹ️ Payment status changed during processing: ${current.status}`);
-            return { status: 'already_processed' };
-          }
+        const { registerOrExtendMACSession } = require('../services/MACAddressService');
 
-          // Mark as completed
-          const updated = await tx.payment.update({
-            where: { id: payment.id },
-            data: {
-              status: 'completed',
-              mpesaRef: mpesaReceipt || checkoutId,
-              expiresAt: new Date(Date.now() + expiryDuration)
-            }
-          });
-
-          return { status: 'updated', payment: updated };
+        const sessionResult = await registerOrExtendMACSession({
+          mac: payment.macAddress,
+          phone: payment.phone,
+          ip: payment.ipAddress,
+          expiryDuration,
+          paymentId: payment.id,
         });
 
-        if (result.status === 'already_processed') {
-          return result;
+        if (!sessionResult.success) {
+          throw new Error(`Failed to register or extend session: ${sessionResult.error}`);
         }
 
-        console.log(`✅ Payment marked as completed: ${checkoutId}`);
+        // ✅ STEP 8: Mark payment as completed
+        await prisma.payment.update({
+          where: { id: payment.id },
+          data: {
+            status: 'completed',
+            mpesaRef: mpesaReceipt || checkoutId,
+            expiresAt: sessionResult.expiresAt,
+          },
+        });
 
+        console.log(`✅ Payment marked as completed: ${checkoutId}`);
         logAudit('payment_completed', {
           checkoutId,
           phone: payment.phone,
           amount: payment.amount,
-          mpesaReceipt
+          mpesaReceipt,
+          sessionAction: sessionResult.action,
         });
 
         // ✅ STEP 9: Whitelist MAC address
         console.log(`🔓 Whitelisting MAC: ${payment.macAddress}`);
-
         const { whitelistMAC } = require('../config/mikrotik');
 
-        const timeLabel = {
-          '10': '1Hr',
-          '15': '4Hrs',
-          '20': '12Hrs',
-          '30': '24Hrs'
-        }[String(payment.amount)];
 
-        const mikrotikResult = await whitelistMAC(payment.macAddress, timeLabel);
+    const mikrotikResult = await whitelistMAC(payment.macAddress, timeLabel);
 
-        if (!mikrotikResult.success) {
-          // Payment completed but MAC not whitelisted - partial failure
-          console.error(`⚠️ MAC whitelist failed: ${mikrotikResult.message}`);
+    if (!mikrotikResult.success) {
+      // Payment completed but MAC not whitelisted - partial failure
+      console.error(`⚠️ MAC whitelist failed: ${mikrotikResult.message}`);
 
-          await prisma.payment.update({
-            where: { id: payment.id },
-            data: { status: 'completed_but_mac_failed' }
-          });
+      await prisma.payment.update({
+        where: { id: payment.id },
+        data: { status: 'completed_but_mac_failed' }
+      });
 
           logAudit('payment_mac_whitelist_failed', {
             checkoutId,
@@ -316,7 +301,7 @@ async function setupPaymentWorker() {
           status: 'success',
           checkoutId,
           phone: payment.phone,
-          expiresAt: result.payment.expiresAt
+          expiresAt: sessionResult.expiresAt
         };
       } catch (error) {
         console.error(`❌ Payment processing error: ${error.message}`);

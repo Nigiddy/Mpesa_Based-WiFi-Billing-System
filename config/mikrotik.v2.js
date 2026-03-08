@@ -12,9 +12,7 @@ const { RouterOSClient } = require("node-routeros");
 const { logAudit } = require("../utils/auditLogger");
 const {
   validateMACFormat,
-  checkMACAlreadyActive,
   detectPotentialSpoofing,
-  registerMACSession
 } = require("../services/MACAddressService");
 
 const MIKROTIK_ENABLED = String(process.env.MIKROTIK_ENABLED || "false").toLowerCase() === "true";
@@ -73,19 +71,7 @@ async function whitelistMAC(macAddress, timeLabel) {
 
     const normalizedMAC = validation.normalized;
 
-    // ✅ Step 2: Check for existing active sessions
-    const activeCheck = await checkMACAlreadyActive(normalizedMAC);
-    if (activeCheck.hasActiveSession) {
-      console.warn(`⚠️ MAC already active: ${normalizedMAC}`);
-      logAudit("mac_already_active", {
-        macAddress: normalizedMAC,
-        timeLabel,
-        activeSession: activeCheck.sessionId
-      });
-      // Allow but log as warning
-    }
-
-    // ✅ Step 3: Check for spoofing indicators
+    // ✅ Step 2: Check for spoofing indicators
     const spoofingCheck = await detectPotentialSpoofing(normalizedMAC, null);
     if (spoofingCheck.isSuspicious) {
       console.warn("⚠️ SUSPICIOUS: Possible MAC spoofing detected");

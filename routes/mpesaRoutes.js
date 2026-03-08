@@ -1,6 +1,7 @@
 const express = require("express");
 const { stkPush } = require("../config/mpesa");
 const prisma = require("../config/prismaClient");
+const { isValidPackage } = require("../lib/packages");
 
 const router = express.Router();
 
@@ -11,6 +12,10 @@ router.post("/payments/initiate", async (req, res) => {
 
     if (!phone || !amount || !macAddress) {
       return res.status(400).json({ success: false, error: "Missing required fields" });
+    }
+
+    if (!isValidPackage(amount)) {
+      return res.status(400).json({ success: false, error: "Invalid package selected." });
     }
 
     // Accept +2547XXXXXXXX or 2547XXXXXXXX

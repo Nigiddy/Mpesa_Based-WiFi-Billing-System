@@ -152,64 +152,76 @@ async function detectPotentialSpoofing(mac, ip) {
  * @param {Object} params - { mac, phone, ip, expiryTime, sessionDuration }
  * @returns {Promise<Object>}
  */
-async function registerMACSession(params) {
-  const { mac, phone, ip, expiryTime, sessionDuration, paymentId } = params;
+async function registerOrExtendMACSession(params) {
+  const { mac, phone, ip, expiryDuration, paymentId } = params;
 
   try {
     const normalizedMAC = mac.toUpperCase();
 
-    // Validate format
     const formatValidation = validateMACFormat(normalizedMAC);
     if (!formatValidation.valid) {
       return { success: false, error: formatValidation.error };
     }
 
-    // Check for existing active sessions
-    const activeCheck = await checkMACAlreadyActive(normalizedMAC);
-    if (activeCheck.hasActiveSession) {
-      return { success: false, error: activeCheck.message };
-    }
-
-    // Detect spoofing attempts
-    const spoofingCheck = await detectPotentialSpoofing(normalizedMAC, ip);
-    if (spoofingCheck.isSuspicious) {
-      console.warn('⚠️ SUSPICIOUS: Possible MAC spoofing detected:', spoofingCheck);
-      // Could block here in production, or log for review
-      // For now, we allow but log the suspicious activity
-    }
-
-    // Get or create user
-    const user = await prisma.user.upsert({
-      where: { phone },
-      update: { lastSeen: new Date() },
-      create: {
-        phone,
+    const activeSession = await prisma.session.findFirst({
+      where: {
         macAddress: normalizedMAC,
-        status: 'ACTIVE'
-      }
+        disconnectedAt: null,
+        expiryTime: { gt: new Date() },
+      },
     });
 
-    // Create session
-    const session = await prisma.session.create({
-      data: {
-        userId: user.id,
-        macAddress: normalizedMAC,
-        ipAddress: ip,
-        expiryTime,
-        startTime: new Date(),
-        paymentId
-      }
-    });
+    if (activeSession) {
+      // Extend the existing session
+      const newExpiryTime = new Date(activeSession.expiryTime.getTime() + expiryDuration);
+      const updatedSession = await prisma.session.update({
+        where: { id: activeSession.id },
+        data: {
+          expiryTime: newExpiryTime,
+          paymentId: paymentId, // Link to the new payment
+        },
+      });
+      console.log(`✅ Session extended for ${normalizedMAC}. New expiry: ${newExpiryTime.toISOString()}`);
+      return {
+        success: true,
+        sessionId: updatedSession.id,
+        expiresAt: newExpiryTime,
+        action: 'extended',
+      };
+    } else {
+      // Create a new session
+      const user = await prisma.user.upsert({
+        where: { phone },
+        update: { lastSeen: new Date() },
+        create: {
+          phone,
+          macAddress: normalizedMAC,
+          status: 'ACTIVE',
+        },
+      });
 
-    console.log(`✅ Session registered: ${normalizedMAC} expires ${expiryTime.toISOString()}`);
+      const newExpiryTime = new Date(Date.now() + expiryDuration);
+      const newSession = await prisma.session.create({
+        data: {
+          userId: user.id,
+          macAddress: normalizedMAC,
+          ipAddress: ip,
+          expiryTime: newExpiryTime,
+          startTime: new Date(),
+          paymentId,
+        },
+      });
 
-    return {
-      success: true,
-      sessionId: session.id,
-      expiresAt: expiryTime
-    };
+      console.log(`✅ New session registered for ${normalizedMAC}. Expires: ${newExpiryTime.toISOString()}`);
+      return {
+        success: true,
+        sessionId: newSession.id,
+        expiresAt: newExpiryTime,
+        action: 'created',
+      };
+    }
   } catch (error) {
-    console.error('Error registering MAC session:', error);
+    console.error('Error registering or extending MAC session:', error);
     return { success: false, error: error.message };
   }
 }
@@ -244,6 +256,6 @@ module.exports = {
   validateMACFormat,
   checkMACAlreadyActive,
   detectPotentialSpoofing,
-  registerMACSession,
+  registerOrExtendMACSession,
   endMACSession
 };
