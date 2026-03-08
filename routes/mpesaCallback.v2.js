@@ -288,7 +288,7 @@ async function setupPaymentWorker() {
           // The core payment is already committed. We just flag that this part failed.
           console.error(`⚠️ MAC whitelist failed after successful payment: ${mikrotikResult.message}`);
 
-          // Update status in a separate, non-transactional call
+          // Update status to flag for retry
           await prisma.payment.update({
             where: { id: payment.id },
             data: { status: PaymentStatus.COMPLETED_BUT_MAC_FAILED }
@@ -299,11 +299,29 @@ async function setupPaymentWorker() {
             mac: payment.macAddress,
             error: mikrotikResult.message
           });
+          
+          // Enqueue a job to retry the whitelisting
+          const { getMacWhitelistRetryQueue } = require('../workers/timeoutWorkers');
+          const retryQueue = getMacWhitelistRetryQueue();
+          if (retryQueue) {
+            await retryQueue.add('retry-mac-whitelist', {
+              paymentId: payment.id,
+              timeLabel: timeLabel
+            }, {
+              attempts: 5, // Retry up to 5 times
+              backoff: {
+                type: 'exponential',
+                delay: 60000 // Start with a 1-minute delay
+              },
+              removeOnComplete: true,
+              jobId: `mac-retry-${payment.id}`
+            });
+            console.log(`🔁 Enqueued MAC whitelist retry job for payment ${payment.id}`);
+          }
 
-          // Alert admin - manual intervention needed
-          console.error('🚨 ALERT: Payment completed but MAC whitelisting failed. Manual intervention required.');
+          // Alert admin - manual intervention needed if retries fail
+          console.error('🚨 ALERT: MAC whitelisting failed. Automatic retry scheduled.');
 
-          // Return a specific status but don't re-throw; the payment itself was successful.
           return {
             status: 'completed_but_mac_failed',
             message: mikrotikResult.message
