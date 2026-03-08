@@ -10,35 +10,59 @@ const axios = require('axios');
  * M-Pesa production IP addresses for whitelist
  * Get updated list from M-Pesa documentation
  */
-const SAFARICOM_IPS = {
-  sandbox: ['196.201.214.200', '196.201.214.201'],
+const SAFARICOM_IP_RANGES = {
+  sandbox: ['196.201.214.0/24'], // Example range for sandbox
   production: [
-    '196.201.214.200',
-    '196.201.214.201',
-    '196.201.214.202'
-    // Add more as provided by Safaricom
+    '196.201.214.0/24',
+    '196.201.215.0/24'
+    // Safaricom's known production IP ranges
   ]
 };
 
 /**
- * Verify callback came from Safaricom servers
+ * Checks if a given IPv4 address is within a CIDR range.
+ * @param {string} ip - The IPv4 address to check.
+ * @param {string} cidr - The CIDR range (e.g., '196.201.214.0/24').
+ * @returns {boolean} - True if the IP is within the range.
+ */
+function isIpInRange(ip, cidr) {
+    try {
+        const [range, bits] = cidr.split('/');
+        if (!range || !bits) return false;
+
+        const mask = ~((1 << (32 - parseInt(bits, 10))) - 1);
+
+        const ipLong = ip.split('.').reduce((acc, octet) => (acc << 8) + parseInt(octet, 10), 0);
+        const rangeLong = range.split('.').reduce((acc, octet) => (acc << 8) + parseInt(octet, 10), 0);
+
+        return (ipLong & mask) === (rangeLong & mask);
+    } catch (error) {
+        console.error(`Error checking IP range for ip: ${ip} and cidr: ${cidr}`, error);
+        return false;
+    }
+}
+
+
+/**
+ * Verify callback came from Safaricom servers by checking against known IP ranges.
  * @param {string} ip - Request IP address
  * @returns {boolean}
  */
 function isValidSafaricomIP(ip) {
   const env = process.env.MPESA_ENV || 'sandbox';
-  const allowedIPs = SAFARICOM_IPS[env] || SAFARICOM_IPS.sandbox;
+  const allowedRanges = SAFARICOM_IP_RANGES[env] || SAFARICOM_IP_RANGES.sandbox;
 
   if (process.env.NODE_ENV !== 'production') {
-    // In development, accept all IPs
+    // In development, accept all IPs for easier testing
     console.warn('⚠️ IP validation disabled in non-production environment');
     return true;
   }
 
-  const isValid = allowedIPs.includes(ip);
+  // Check if the IP is in any of the allowed ranges
+  const isValid = allowedRanges.some(range => isIpInRange(ip, range));
 
   if (!isValid) {
-    console.error(`❌ SECURITY: Callback from unauthorized IP: ${ip}`);
+    console.error(`❌ SECURITY: Callback from unauthorized IP: ${ip}. Not in allowed ranges.`);
   }
 
   return isValid;
