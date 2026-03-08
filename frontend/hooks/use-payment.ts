@@ -5,6 +5,8 @@ import { toast } from "sonner"
 import { apiClient, type PaymentRequest } from "@/lib/api"
 import { packages } from "@/lib/packages"
 
+import { useSearchParams } from "next/navigation"
+
 export function usePayment() {
   const [phone, setPhone] = useState("")
   const [amount, setAmount] = useState(30)
@@ -14,28 +16,19 @@ export function usePayment() {
   const [macAddress, setMacAddress] = useState("Loading...")
   const [showSuccessModal, setShowSuccessModal] = useState(false)
   const [paymentData, setPaymentData] = useState<any>(null)
+  const searchParams = useSearchParams()
 
   useEffect(() => {
-    fetchDeviceInfo()
-  }, [])
-
-  const fetchDeviceInfo = async () => {
-    try {
-      const response = await apiClient.getDeviceInfo()
-      if (response.success && response.data) {
-        setMacAddress(response.data.macAddress)
-      } else {
-        throw new Error(response.error || "Failed to fetch device info")
-      }
-    } catch (error) {
-      console.warn("Could not fetch device info (Backend might be offline):", error)
+    const macFromUrl = searchParams.get("mac")
+    if (macFromUrl) {
+      setMacAddress(macFromUrl)
+    } else {
       setMacAddress("UNAVAILABLE")
-      // Only show error toast if it's not a connection refused (which is common in dev)
-      if (process.env.NODE_ENV === "production") {
-        toast.error("Could not retrieve device information.")
-      }
+      toast.error("Device MAC Address not found.", {
+        description: "Please ensure you are connected to the Hotspot WiFi.",
+      })
     }
-  }
+  }, [searchParams])
 
   const handlePayment = async () => {
     if (!/^(07|01)\d{8}$/.test(phone)) {

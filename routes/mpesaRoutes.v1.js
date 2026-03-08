@@ -27,7 +27,7 @@ const router = express.Router();
  * }
  */
 router.post(
-  "/v1/payments/initiate",
+  "/payments/initiate",
   paymentLimiter,
   validatePaymentInitiationMiddleware,
   async (req, res) => {
@@ -131,7 +131,7 @@ router.post(
  * Check payment status
  * Used for frontend polling (should migrate to WebSocket)
  */
-router.get("/v1/payments/status/:transactionId", async (req, res) => {
+router.get("/payments/status/:transactionId", async (req, res) => {
   try {
     const { transactionId } = req.params;
 
@@ -200,7 +200,7 @@ router.get("/v1/payments/status/:transactionId", async (req, res) => {
  * GET /api/v1/payments/:transactionId/details
  * Get full payment details (for receipts)
  */
-router.get("/v1/payments/:transactionId/details", async (req, res) => {
+router.get("/payments/:transactionId/details", async (req, res) => {
   try {
     const { transactionId } = req.params;
 

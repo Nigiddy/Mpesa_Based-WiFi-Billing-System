@@ -137,18 +137,6 @@ class ApiClient {
     return this.request("/auth/admin/me")
   }
 
-  // Device & Network APIs
-  async getDeviceInfo(): Promise<ApiResponse<{ macAddress: string; ipAddress: string; deviceId: string }>> {
-    return this.request("/api/device/info")
-  }
-
-  async registerDevice(macAddress: string): Promise<ApiResponse<{ deviceId: string }>> {
-    return this.request("/api/device/register", {
-      method: "POST",
-      body: JSON.stringify({ macAddress }),
-    })
-  }
-
   // Payment APIs
   async initiatePayment(paymentData: PaymentRequest): Promise<ApiResponse<PaymentResponse>> {
     return this.request("/api/v1/payments/initiate", {
