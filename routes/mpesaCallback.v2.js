@@ -12,6 +12,7 @@
 
 const express = require("express");
 const prisma = require("../config/prismaClient");
+const { PaymentStatus } = require("@prisma/client");
 const { getPaymentQueue } = require("../config/paymentQueue");
 const {
   validateCallbackSecurityMiddleware,
@@ -142,7 +143,7 @@ async function setupPaymentWorker() {
         }
 
         // ✅ STEP 2: Idempotency - check if already processed
-        if (payment.status === 'completed' || payment.status === 'failed') {
+        if (payment.status === PaymentStatus.COMPLETED || payment.status === PaymentStatus.FAILED) {
           console.log(`ℹ️ Payment already processed: ${payment.status}`);
           return { status: 'already_processed', paymentStatus: payment.status };
         }
@@ -155,7 +156,7 @@ async function setupPaymentWorker() {
 
           await prisma.payment.update({
             where: { id: payment.id },
-            data: { status: 'failed' }
+            data: { status: PaymentStatus.FAILED }
           });
 
           logAudit('payment_failed', { checkoutId, resultCode });
@@ -176,7 +177,7 @@ async function setupPaymentWorker() {
 
           await prisma.payment.update({
             where: { id: payment.id },
-            data: { status: 'fraud_detected' }
+            data: { status: PaymentStatus.FRAUD_DETECTED }
           });
 
           logAudit('fraud_detected_amount_mismatch', {
@@ -202,7 +203,7 @@ async function setupPaymentWorker() {
 
           await prisma.payment.update({
             where: { id: payment.id },
-            data: { status: 'verification_failed' }
+            data: { status: PaymentStatus.VERIFICATION_FAILED }
           });
 
           logAudit('payment_verification_failed', {
@@ -253,7 +254,7 @@ async function setupPaymentWorker() {
             await tx.payment.update({
               where: { id: payment.id },
               data: {
-                status: 'completed',
+                status: PaymentStatus.COMPLETED,
                 mpesaRef: mpesaReceipt || checkoutId,
                 expiresAt: sessionDetails.expiresAt,
               },
@@ -290,7 +291,7 @@ async function setupPaymentWorker() {
           // Update status in a separate, non-transactional call
           await prisma.payment.update({
             where: { id: payment.id },
-            data: { status: 'completed_but_mac_failed' }
+            data: { status: PaymentStatus.COMPLETED_BUT_MAC_FAILED }
           });
 
           logAudit('payment_mac_whitelist_failed', {

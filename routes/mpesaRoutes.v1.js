@@ -12,6 +12,7 @@ const { stkPush } = require("../config/mpesa");
 const { validatePaymentInitiationMiddleware } = require("../middleware/validationMiddleware");
 const { paymentLimiter } = require("../middleware/rateLimit");
 
+const { PaymentStatus } = require("@prisma/client");
 const { getPaymentTimeoutQueue } = require("../workers/timeoutWorkers");
 
 const router = express.Router();
@@ -41,7 +42,7 @@ router.post(
       const recentPending = await prisma.payment.findFirst({
         where: {
           phone,
-          status: { in: ['pending', 'completed'] },
+          status: { in: [PaymentStatus.PENDING, PaymentStatus.COMPLETED] },
           createdAt: {
             gte: new Date(Date.now() - 60 * 1000) // Last 60 seconds
           }
@@ -67,7 +68,7 @@ router.post(
           amount,
           transactionId,
           macAddress: mac,
-          status: 'pending',
+          status: PaymentStatus.PENDING,
           ipAddress: req.ip
         }
       });
@@ -81,7 +82,7 @@ router.post(
         // Mark payment as failed if STK Push fails
         await prisma.payment.update({
           where: { id: payment.id },
-          data: { status: 'failed' }
+          data: { status: PaymentStatus.FAILED }
         });
 
         console.error(`❌ STK Push failed for ${transactionId}`);
@@ -125,7 +126,7 @@ router.post(
         data: {
           transactionId,
           mpesaRef: mpesaResponse.CheckoutRequestID,
-          status: 'pending',
+          status: 'pending', // Keep lowercase for frontend compatibility
           expiresAt: null,
           message: 'Enter PIN on your phone to complete payment'
         }
@@ -186,7 +187,7 @@ router.get("/payments/status/:transactionId", async (req, res) => {
     const ageMs = Date.now() - payment.createdAt.getTime();
     const timeoutMs = 5 * 60 * 1000;
 
-    if (payment.status === 'pending' && ageMs > timeoutMs) {
+    if (payment.status === PaymentStatus.PENDING && ageMs > timeoutMs) {
       return res.json({
         success: true,
         data: {
@@ -199,7 +200,7 @@ router.get("/payments/status/:transactionId", async (req, res) => {
     return res.json({
       success: true,
       data: {
-        status: payment.status,
+        status: payment.status.toLowerCase(), // Send lowercase to frontend
         mpesaRef: payment.mpesaRef,
         expiresAt: payment.expiresAt
       }

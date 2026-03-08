@@ -1,6 +1,7 @@
 const { Worker, Queue } = require('bullmq');
 const Redis = require('ioredis');
 const prisma = require('../config/prismaClient');
+const { PaymentStatus } = require('@prisma/client');
 const { logAudit } = require('../utils/auditLogger');
 const { disconnectByMac } = require('../config/mikrotik');
 
@@ -21,12 +22,12 @@ const paymentTimeoutWorker = new Worker('payment-timeout', async (job) => {
 
     // If payment is still pending, mark it as expired.
     // This is a safety check. If the payment was completed, its status would have changed.
-    if (payment && payment.status.toLowerCase() === 'pending') {
+    if (payment && payment.status === PaymentStatus.PENDING) {
       await prisma.payment.update({
         where: { id: payment.id },
-        data: { status: 'expired', failedAt: new Date() },
+        data: { status: PaymentStatus.EXPIRED, failedAt: new Date() },
       });
-      console.log(`  ✅ Transaction ${transactionId} marked as expired.`);
+      console.log(`  ✅ Transaction ${transactionId} marked as EXPIRED.`);
       logAudit('PAYMENT_TIMEOUT_AUTO', { transactionId });
     }
   } catch (error) {
