@@ -6,13 +6,15 @@ const cookieParser = require("cookie-parser");
 const enforceHTTPS = require("./middleware/enforceHTTPS");
 require("dotenv").config();
 
-// ✅ Validate secrets on startup
-// ✅ Validate secrets on startup
+// ✅ Custom imports for health checks and secrets
+const prisma = require('./config/prismaClient');
+const Redis = require('ioredis');
 const { validateSecrets, displaySecretsConfig } = require("./config/secrets");
-const { initWebSocket } = require("./services/websocket"); // Import WebSocket service
+const { initWebSocket } = require("./services/websocket");
+
+// ✅ Validate secrets on startup
 validateSecrets();
 displaySecretsConfig();
-
 
 // ✅ Use versioned, secure routes
 const mpesaRoutesV1 = require("./routes/mpesaRoutes.v1");
@@ -20,11 +22,7 @@ const mpesaCallbackV2 = require("./routes/mpesaCallback.v2");
 const authRoutes = require("./routes/auth");
 const adminRoutes = require("./routes/admin");
 const sessionRoutes = require("./routes/session");
-const { authLimiter, paymentLimiter, apiLimiter } = require("./middleware/rateLimit");
-
-// ✅ Background workers
-const { startSessionExpiryWorker, stopSessionExpiryWorker } = require("./workers/sessionExpiryWorker");
-const { startPaymentTimeoutWorker, stopPaymentTimeoutWorker } = require("./workers/paymentTimeoutWorker");
+const { authLimiter, apiLimiter } = require("./middleware/rateLimit");
 
 const app = express();
 
@@ -58,12 +56,12 @@ app.use(
     origin: FRONTEND_ORIGIN,
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
+    allowedHeaders: ["Content-Type", "Authorization", "X-CSRF-Token"],
   })
 );
 
 // ✅ Middleware
-app.use(cookieParser()); // ⚠️ MUST be before CSRF middleware
+app.use(cookieParser());
 app.use(bodyParser.json({ limit: '10mb' }));
 app.use(bodyParser.urlencoded({ extended: true, limit: '10mb' }));
 
@@ -72,27 +70,50 @@ app.options("*", cors());
 
 // Apply rate limiting to specific routes
 app.use("/auth", authLimiter);
-app.use("/api/payments", paymentLimiter);
-app.use("/api", apiLimiter);
+app.use("/api", apiLimiter); // General API limiter
 
 // Admin Routes
 app.use("/api", adminRoutes);
 app.use("/api", sessionRoutes);
 
 // ✅ Register Routes (v1 and v2 versioned)
-app.use("/api/v1", mpesaRoutesV1); // Secure payment endpoints with validation
-app.use("/", mpesaCallbackV2); // Secure callback handler with 9-step verification
+app.use("/api/v1", mpesaRoutesV1); // Secure payment endpoints (rate limited internally)
+app.use("/", mpesaCallbackV2); // Secure callback handler
 app.use("/auth", authRoutes);
 
-// ✅ Health Check Route
-app.get("/", (req, res) => {
-  res.send("Kibaruani Billing System Backend is Running!");
+// ✅ Comprehensive Health Check Route
+app.get("/", async (req, res) => {
+  try {
+    const redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379', { lazyConnect: true });
+    await Promise.all([
+      prisma.$queryRaw`SELECT 1`, // Check DB connection
+      redis.ping(), // Check Redis connection
+    ]);
+    redis.quit();
+    res.status(200).json({
+      success: true,
+      status: 'healthy',
+      timestamp: new Date().toISOString(),
+      dependencies: { database: 'ok', redis: 'ok' }
+    });
+  } catch (error) {
+    res.status(503).json({
+      success: false,
+      status: 'unhealthy',
+      error: 'One or more critical dependencies are down.',
+      details: process.env.NODE_ENV === 'production' ? 'See logs for details' : error.message
+    });
+  }
 });
+
 
 // ✅ Global error handler
 app.use((err, req, res, next) => {
   console.error('Unhandled error:', err);
-  res.status(500).json({
+  if (res.headersSent) {
+    return next(err);
+  }
+  res.status(err.status || 500).json({
     success: false,
     error: process.env.NODE_ENV === 'production' ? 'Internal server error' : err.message
   });
@@ -105,64 +126,34 @@ app.use((req, res) => {
 
 // ✅ Start Server
 const PORT = process.env.PORT || 5000;
-let sessionExpiryInterval = null;
-let paymentTimeoutInterval = null;
 
 const server = app.listen(PORT, () => {
   console.log(`✅ Server running on port ${PORT}`);
   console.log(`✅ CORS allowed origin: ${FRONTEND_ORIGIN}`);
   console.log(`✅ Environment: ${process.env.NODE_ENV || 'development'}`);
-
-  // ✅ Start background workers
-  console.log('\n🔄 Starting background workers...');
-  sessionExpiryInterval = startSessionExpiryWorker();
-  paymentTimeoutInterval = startPaymentTimeoutWorker();
-
-  // Try to initialize payment worker if it exists (it might be in a separate file or required here)
-  try {
-    const { initializePaymentWorker } = require('./workers/paymentWorker');
-    initializePaymentWorker();
-  } catch (e) {
-    console.warn("Could not auto-start payment worker:", e.message);
-  }
-
-  console.log('✅ All background workers started\n');
-
-  // ✅ Initialize WebSocket Server
+  console.log('✅ Background workers (BullMQ) started automatically via modules.');
+  
+  // Initialize WebSocket Server
   initWebSocket(server);
 });
 
 // ✅ Graceful shutdown
-process.on('SIGTERM', () => {
-  console.log('\n📛 SIGTERM received. Shutting down gracefully...');
-
-  // Stop workers
-  stopSessionExpiryWorker(sessionExpiryInterval);
-  stopPaymentTimeoutWorker(paymentTimeoutInterval);
-
-  // Close server
+const gracefulShutdown = (signal) => {
+  console.log(`\n📛 ${signal} received. Shutting down gracefully...`);
   server.close(() => {
     console.log('✅ Server shutdown complete');
-    process.exit(0);
+    prisma.$disconnect().then(() => {
+      console.log('✅ Database connection closed.');
+      process.exit(0);
+    });
   });
 
-  // Force exit after 10 seconds if graceful shutdown fails
+  // Force exit after 10 seconds
   setTimeout(() => {
     console.error('❌ Forced shutdown after timeout');
     process.exit(1);
   }, 10000);
-});
+};
 
-process.on('SIGINT', () => {
-  console.log('\n📛 SIGINT received. Shutting down gracefully...');
-
-  // Stop workers
-  stopSessionExpiryWorker(sessionExpiryInterval);
-  stopPaymentTimeoutWorker(paymentTimeoutInterval);
-
-  // Close server
-  server.close(() => {
-    console.log('✅ Server shutdown complete');
-    process.exit(0);
-  });
-});
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
