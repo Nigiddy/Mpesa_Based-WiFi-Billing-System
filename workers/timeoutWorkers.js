@@ -3,6 +3,7 @@ const Redis = require('ioredis');
 const prisma = require('../config/prismaClient');
 const { PaymentStatus } = require('@prisma/client');
 const { disconnectByMac, whitelistMAC } = require('../config/mikrotik');
+const { logAudit } = require('../utils/auditLogger');
 
 const connection = new Redis(process.env.REDIS_URL || 'redis://localhost:6379', {
   maxRetriesPerRequest: null,
@@ -35,6 +36,15 @@ const paymentTimeoutWorker = new Worker('payment-timeout', async (job) => {
   }
 }, { connection });
 
+paymentTimeoutWorker.on('failed', (job, error) => {
+  console.error(`🚨 [Payment Timeout Worker] Job ${job.id} for transaction ${job.data.transactionId} failed permanently.`, error);
+  logAudit('PAYMENT_TIMEOUT_WORKER_FAILURE', {
+    jobId: job.id,
+    transactionId: job.data.transactionId,
+    error: error.message,
+  });
+});
+
 
 // --- Session Expiry Worker ---
 const sessionExpiryQueue = new Queue('session-expiry', { connection });
@@ -62,6 +72,16 @@ const sessionExpiryWorker = new Worker('session-expiry', async (job) => {
     throw error;
   }
 }, { connection });
+
+sessionExpiryWorker.on('failed', (job, error) => {
+  console.error(`🚨 [Session Expiry Worker] Job ${job.id} for MAC ${job.data.macAddress} failed permanently.`, error);
+  logAudit('SESSION_EXPIRY_WORKER_FAILURE', {
+    jobId: job.id,
+    sessionId: job.data.sessionId,
+    macAddress: job.data.macAddress,
+    error: error.message,
+  });
+});
 
 
 // --- MAC Whitelist Retry Worker ---
@@ -102,6 +122,15 @@ const macWhitelistRetryWorker = new Worker('mac-whitelist-retry', async (job) =>
     throw error;
   }
 }, { connection });
+
+macWhitelistRetryWorker.on('failed', (job, error) => {
+  console.error(`🚨 [MAC Retry Worker] Job ${job.id} for payment ${job.data.paymentId} failed permanently.`, error);
+  logAudit('MAC_WHITELIST_RETRY_FAILURE', {
+    jobId: job.id,
+    paymentId: job.data.paymentId,
+    error: error.message,
+  });
+});
 
 
 // --- Exporter ---
