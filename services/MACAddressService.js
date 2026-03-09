@@ -8,6 +8,7 @@
  */
 
 const prisma = require("../config/prismaClient");
+const { getSessionExpiryQueue } = require('../workers/timeoutWorkers');
 
 /**
  * Validate MAC address format
@@ -181,6 +182,25 @@ async function registerOrExtendMACSession(params, prismaClient = prisma) {
           paymentId: paymentId, // Link to the new payment
         },
       });
+
+      // Reschedule session expiry job
+      const sessionExpiryQueue = getSessionExpiryQueue();
+      if (sessionExpiryQueue) {
+        const jobId = `session-expiry-${activeSession.id}`;
+        // Remove old job to be safe, then add new one.
+        await sessionExpiryQueue.remove(jobId);
+        await sessionExpiryQueue.add(
+          'expire-session',
+          { sessionId: activeSession.id, macAddress: normalizedMAC },
+          {
+            delay: newExpiryTime.getTime() - Date.now(),
+            jobId: jobId,
+            removeOnComplete: true,
+          }
+        );
+        console.log(`[Expiry Job] Rescheduled for session ${activeSession.id} at ${newExpiryTime.toISOString()}`);
+      }
+      
       console.log(`✅ Session extended for ${normalizedMAC}. New expiry: ${newExpiryTime.toISOString()}`);
       return {
         success: true,
@@ -211,6 +231,24 @@ async function registerOrExtendMACSession(params, prismaClient = prisma) {
           paymentId,
         },
       });
+
+      // Schedule session expiry job
+      const sessionExpiryQueue = getSessionExpiryQueue();
+      if (sessionExpiryQueue) {
+        const delay = newExpiryTime.getTime() - Date.now();
+        if (delay > 0) {
+          await sessionExpiryQueue.add(
+            'expire-session',
+            { sessionId: newSession.id, macAddress: normalizedMAC },
+            {
+              delay: delay,
+              jobId: `session-expiry-${newSession.id}`,
+              removeOnComplete: true,
+            }
+          );
+          console.log(`[Expiry Job] Scheduled for new session ${newSession.id} at ${newExpiryTime.toISOString()}`);
+        }
+      }
 
       console.log(`✅ New session registered for ${normalizedMAC}. Expires: ${newExpiryTime.toISOString()}`);
       return {
