@@ -2,6 +2,7 @@ const express = require("express");
 const { stkPush } = require("../config/mpesa");
 const prisma = require("../config/prismaClient");
 const { isValidPackage } = require("../lib/packages");
+const { getPaymentTimeoutQueue } = require("../workers/timeoutWorkers");
 
 const router = express.Router();
 
@@ -42,7 +43,7 @@ router.post("/payments/initiate", async (req, res) => {
       return res.status(500).json({ success: false, error: "STK Push failed. No response from MPesa API." });
     }
 
-    // Persist CheckoutRequestID for callback correlation
+    // Persist CheckoutRequestID for callback correlation and schedule timeout job
     try {
       const checkoutId = mpesaResponse.CheckoutRequestID || null;
       if (checkoutId) {
@@ -51,8 +52,23 @@ router.post("/payments/initiate", async (req, res) => {
           data: { mpesaRef: checkoutId }
         });
       }
+
+      // Schedule a job to check for timeout if callback isn't received
+      const paymentTimeoutQueue = getPaymentTimeoutQueue();
+      if (paymentTimeoutQueue) {
+        await paymentTimeoutQueue.add(
+          'check-payment-timeout',
+          { transactionId },
+          {
+            delay: 95000, // 95 seconds, M-Pesa timeout is ~90s
+            removeOnComplete: true,
+            jobId: `timeout-${transactionId}` // Deduplication
+          }
+        );
+        console.log(`[Timeout Job] Scheduled for ${transactionId} in 95s`);
+      }
     } catch (e) {
-      console.error("Failed to persist mpesa_ref:", e);
+      console.error("Failed to persist mpesa_ref or schedule timeout job:", e);
     }
 
     return res.json({
