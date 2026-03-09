@@ -267,5 +267,5 @@ module.exports = {
   verifyCallbackSignature,
   verifyPaymentWithMpesa,
   validateCallbackSecurityMiddleware,
-  SAFARICOM_IPS
+  SAFARICOM_IP_RANGES
 };
