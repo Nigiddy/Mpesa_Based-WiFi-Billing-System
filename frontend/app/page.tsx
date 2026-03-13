@@ -1,5 +1,6 @@
 "use client"
 
+import { Suspense } from "react"
 import { Phone, Shield, Wifi, Lock } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -9,7 +10,7 @@ import { motion } from "framer-motion"
 import { packages } from "@/lib/packages"
 import { usePayment } from "@/hooks/use-payment"
 
-export default function UserPortal() {
+function UserPortal() {
   useDynamicTitle("Get Connected - KIBARUANI")
   
   const {
@@ -140,5 +141,13 @@ export default function UserPortal() {
 
       </main>
     </div>
+  )
+}
+
+export default function Page() {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <UserPortal />
+    </Suspense>
   )
 }
