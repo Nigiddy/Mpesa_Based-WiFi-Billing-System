@@ -1,14 +1,4 @@
-/**
- * Improved M-Pesa Callback Handler
- * Includes:
- * - Security validation
- * - IP whitelist verification
- * - Signature validation (when available)
- * - Idempotent processing
- * - Amount verification
- * - Server-side M-Pesa API verification
- * - Audit logging
- */
+
 
 const express = require("express");
 const prisma = require("../config/prismaClient");
@@ -24,18 +14,7 @@ const { logAudit } = require("../utils/auditLogger");
 
 const router = express.Router();
 
-/**
- * POST /mpesa/callback
- * M-Pesa STK Push callback endpoint
- * 
- * Security layers:
- * 1. Rate limiting per IP
- * 2. Source IP validation (Safaricom only)
- * 3. Callback structure validation
- * 4. Idempotency check
- * 5. Amount verification
- * 6. M-Pesa API verification
- */
+
 router.post(
   "/mpesa/callback",
   paymentLimiter,

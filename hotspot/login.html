@@ -33,22 +33,29 @@
   </div>
 
   <script>
+    // ✅ Set your backend URL here (no trailing slash)
+    const API_BASE_URL = window.location.origin; // or set explicitly: "https://yourdomain.com"
+
     document.getElementById("mac").value = window.location.search.split("mac=")[1]?.split("&")[0] || "";
 
     document.getElementById("paymentForm").addEventListener("submit", async function (e) {
       e.preventDefault();
 
       const phone = document.getElementById("phone").value;
-      const amount = document.getElementById("duration").value;
-      const mac = document.getElementById("mac").value;
+      const amount = Number(document.getElementById("duration").value);
+      const macAddress = document.getElementById("mac").value;
+
+      // Map selected amount to package name
+      const packageMap = { 10: "1Hr", 15: "4Hrs", 20: "12Hrs", 30: "24Hrs" };
+      const pkg = packageMap[amount] || "1Hr";
 
       document.getElementById("status").innerText = "Processing payment...";
 
       try {
-        const res = await fetch("https://yourdomain.com/api/pay", {
+        const res = await fetch(`${API_BASE_URL}/api/v1/payments/initiate`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ phone, amount, mac })
+          body: JSON.stringify({ phone, amount, macAddress, package: pkg })
         });
 
         const data = await res.json();
@@ -56,7 +63,7 @@
         if (data.success) {
           document.getElementById("status").innerText = "STK sent. Complete payment on your phone.";
         } else {
-          document.getElementById("status").innerText = "Payment failed: " + data.message;
+          document.getElementById("status").innerText = "Payment failed: " + (data.message || data.error);
         }
       } catch (err) {
         document.getElementById("status").innerText = "Error: Could not reach server.";
