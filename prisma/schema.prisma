@@ -65,7 +65,7 @@ model Payment {
   user            User?          @relation(fields: [userId], references: [id], onDelete: SetNull)
   
   phone           String         // Denormalized for audit trail
-  amount          Int            // In cents (e.g., 1000 = Ksh 10)
+  amount          Int            // In KES (e.g., 10 = Ksh 10, 30 = Ksh 30)
   status          PaymentStatus  @default(PENDING)
   
   mpesaRef        String?        @unique @map("mpesa_reference")

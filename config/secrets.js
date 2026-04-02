@@ -146,12 +146,38 @@ function validateSecrets() {
     }
   }
 
-  // Special validation for MPESA_CALLBACK_URL in production
-  if (process.env.NODE_ENV === 'production') {
-    const callbackUrl = process.env.MPESA_CALLBACK_URL;
+  // Special validation for MPESA_CALLBACK_URL
+  const callbackUrl = process.env.MPESA_CALLBACK_URL;
+  if (callbackUrl) {
+    // 1. Must be HTTPS in production
+    if (process.env.NODE_ENV === 'production' && !callbackUrl.startsWith('https')) {
+      errors.push('❌ MPESA_CALLBACK_URL must use HTTPS in production');
+    }
 
-    if (callbackUrl && !callbackUrl.startsWith('https')) {
-      errors.push('❌ MPESA_CALLBACK_URL must be HTTPS in production');
+    // 2. Reject placeholder / unset values in non-development environments.
+    //    A callback URL pointing at yourdomain.com or localhost will silently
+    //    drop all M-Pesa callbacks and break every payment flow.
+    const PLACEHOLDER_PATTERNS = [
+      'yourdomain.com',
+      'example.com',
+      'localhost',
+      '127.0.0.1',
+    ];
+    const isPlaceholder = PLACEHOLDER_PATTERNS.some((p) => callbackUrl.includes(p));
+
+    if (isPlaceholder && process.env.NODE_ENV !== 'development') {
+      errors.push(
+        `❌ MPESA_CALLBACK_URL appears to be a placeholder ("${callbackUrl}"). ` +
+        'Update it to a publicly reachable HTTPS URL before deploying.'
+      );
+    }
+
+    if (isPlaceholder && process.env.NODE_ENV === 'development') {
+      // Warn but don't block local dev
+      console.warn(
+        `⚠️  MPESA_CALLBACK_URL is set to a placeholder ("${callbackUrl}"). ` +
+        'M-Pesa callbacks will not reach this server unless you use a tunnel (e.g. ngrok).'
+      );
     }
   }
 

@@ -114,8 +114,9 @@ function verifyCallbackSignature(callbackData, signature) {
 }
 
 /**
- * Query M-Pesa API to verify payment status
- * This is the most reliable verification method
+ * Query M-Pesa API to verify payment status.
+ * Uses the shared cached access token from config/mpesa.js to avoid
+ * a redundant OAuth round-trip on every verification call.
  */
 async function verifyPaymentWithMpesa(checkoutRequestId) {
   try {
@@ -125,28 +126,18 @@ async function verifyPaymentWithMpesa(checkoutRequestId) {
     }
 
     const moment = require('moment');
-    const { stkPush } = require('../config/mpesa');
+    // ✅ Reuse cached token from config/mpesa.js — no extra OAuth call
+    const { getAccessToken } = require('../config/mpesa');
+    const accessToken = await getAccessToken();
 
-    // Get access token (this function already exists)
-    const auth = Buffer.from(
-      `${process.env.MPESA_CONSUMER_KEY}:${process.env.MPESA_CONSUMER_SECRET}`
-    ).toString('base64');
+    if (!accessToken) {
+      return { verified: false, error: 'Failed to obtain access token' };
+    }
 
-    const tokenResponse = await axios.get(
-      `${
-        process.env.MPESA_ENV === 'sandbox'
-          ? 'https://sandbox.safaricom.co.ke'
-          : 'https://api.safaricom.co.ke'
-      }/oauth/v1/generate?grant_type=client_credentials`,
-      {
-        headers: { Authorization: `Basic ${auth}` }
-      }
-    );
-
-    const accessToken = tokenResponse.data.access_token;
-    const env = process.env.MPESA_ENV === 'sandbox'
-      ? 'https://sandbox.safaricom.co.ke'
-      : 'https://api.safaricom.co.ke';
+    const env =
+      process.env.MPESA_ENV === 'sandbox'
+        ? 'https://sandbox.safaricom.co.ke'
+        : 'https://api.safaricom.co.ke';
 
     // Query STK Push status
     const timestamp = moment().format('YYYYMMDDHHmmss');
@@ -167,10 +158,11 @@ async function verifyPaymentWithMpesa(checkoutRequestId) {
       }
     );
 
-    const resultCode = response.data.ResultCode;
+    // ✅ Normalise to number — Safaricom may return '0' (string) or 0 (number)
+    const resultCode = Number(response.data.ResultCode);
 
     // ResultCode 0 = Success, money received
-    if (resultCode === '0') {
+    if (resultCode === 0) {
       return {
         verified: true,
         status: 'success',
@@ -178,9 +170,9 @@ async function verifyPaymentWithMpesa(checkoutRequestId) {
       };
     }
 
-    // ResultCode 1032 = Request cancelled
-    // ResultCode 1 = Transaction sent but user declined
-    // ResultCode 500 = Generic error
+    // ResultCode 1032 = Request cancelled by user
+    // ResultCode 1    = Transaction sent but user declined
+    // ResultCode 500  = Generic error
     return {
       verified: false,
       resultCode,
