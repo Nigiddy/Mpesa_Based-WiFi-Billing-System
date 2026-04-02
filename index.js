@@ -17,8 +17,8 @@ validateSecrets();
 displaySecretsConfig();
 
 // ✅ Use versioned, secure routes
-const mpesaRoutesV1 = require("./routes/mpesaRoutes.v1");
-const mpesaCallbackV2 = require("./routes/mpesaCallback.v2");
+const mpesaRoutesV1 = require("./routes/mpesaRoutes");
+const mpesaCallbackV2 = require("./routes/mpesaCallback");
 const authRoutes = require("./routes/auth");
 const adminRoutes = require("./routes/admin");
 const sessionRoutes = require("./routes/session");
