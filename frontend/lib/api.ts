@@ -55,6 +55,43 @@ export interface SystemStats {
   blockedUsers: number
 }
 
+export interface VoucherRedemption {
+  id: number
+  macAddress: string
+  ipAddress?: string
+  redeemedAt: string
+}
+
+export interface Voucher {
+  id: number
+  code: string
+  planKey: string
+  durationMs: number
+  maxUses: number
+  currentUses: number
+  status: "unused" | "active" | "fully_used" | "expired"
+  expiresAt?: string
+  createdAt: string
+  redemptions?: VoucherRedemption[]
+}
+
+export interface VoucherRedemptionResult {
+  code: string
+  planKey: string
+  durationMs: number
+  expiresAt: string
+  redemptionId: number
+}
+
+export interface VoucherStatusResult {
+  code: string
+  planKey: string
+  durationMs: number
+  status: "unused" | "active" | "fully_used" | "expired"
+  expiresAt?: string
+  usesRemaining: number
+}
+
 class ApiClient {
   private csrfToken: string | null = null
 
@@ -297,6 +334,56 @@ class ApiClient {
 
   async getNetworkStatus(): Promise<ApiResponse<{ status: string; uptime: number; connectedUsers: number }>> {
     return this.request("/api/network/status")
+  }
+
+  // ─── Voucher APIs ──────────────────────────────────────────────────────────
+
+  async generateVouchers(params: {
+    planKey: string
+    quantity: number
+    maxUses?: number
+    expiresInDays?: number
+  }): Promise<ApiResponse<Voucher[]>> {
+    return this.request("/api/vouchers/generate", {
+      method: "POST",
+      body: JSON.stringify(params),
+    })
+  }
+
+  async getVouchers(params?: {
+    status?: "unused" | "active" | "fully_used" | "expired"
+    page?: number
+    limit?: number
+  }): Promise<ApiResponse<{ vouchers: Voucher[]; total: number; page: number; totalPages: number }>> {
+    const q = new URLSearchParams()
+    if (params?.status) q.append("status", params.status)
+    if (params?.page) q.append("page", params.page.toString())
+    if (params?.limit) q.append("limit", params.limit.toString())
+    return this.request(`/api/vouchers?${q.toString()}`)
+  }
+
+  /** Triggers a CSV file download in the browser */
+  exportVouchersCSV(): void {
+    const token = typeof window !== "undefined" ? localStorage.getItem("admin_token") : null
+    const url = `${API_BASE_URL}/api/vouchers/export/csv`
+    const link = document.createElement("a")
+    link.href = url
+    link.setAttribute("download", `vouchers_${new Date().toISOString().slice(0, 10)}.csv`)
+    if (token) link.setAttribute("data-auth", token)
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+  }
+
+  async redeemVoucher(code: string, macAddress: string): Promise<ApiResponse<VoucherRedemptionResult>> {
+    return this.request("/api/vouchers/redeem", {
+      method: "POST",
+      body: JSON.stringify({ code, macAddress }),
+    })
+  }
+
+  async checkVoucherStatus(code: string): Promise<ApiResponse<VoucherStatusResult>> {
+    return this.request(`/api/vouchers/${encodeURIComponent(code)}/status`)
   }
 }
 

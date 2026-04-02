@@ -17,11 +17,12 @@ validateSecrets();
 displaySecretsConfig();
 
 // ✅ Use versioned, secure routes
-const mpesaRoutesV1 = require("./routes/mpesaRoutes.v1");
-const mpesaCallbackV2 = require("./routes/mpesaCallback.v2");
+const mpesaRoutesV1 = require("./routes/mpesaRoutes");
+const mpesaCallbackV2 = require("./routes/mpesaCallback");
 const authRoutes = require("./routes/auth");
 const adminRoutes = require("./routes/admin");
 const sessionRoutes = require("./routes/session");
+const voucherRoutes = require("./routes/vouchers");
 const { authLimiter, apiLimiter } = require("./middleware/rateLimit");
 
 const app = express();
@@ -78,8 +79,9 @@ app.use("/api", sessionRoutes);
 
 // ✅ Register Routes (v1 and v2 versioned)
 app.use("/api/v1", mpesaRoutesV1); // Secure payment endpoints (rate limited internally)
-app.use("/", mpesaCallbackV2); // Secure callback handler
+app.use("/", mpesaCallbackV2);     // Secure callback handler
 app.use("/auth", authRoutes);
+app.use("/api/vouchers", voucherRoutes); // Voucher feature (routes/vouchers/)
 
 // ✅ Comprehensive Health Check Route
 app.get("/", async (req, res) => {

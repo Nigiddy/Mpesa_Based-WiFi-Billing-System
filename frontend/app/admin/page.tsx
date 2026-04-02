@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Activity, Users, CreditCard, Settings, BarChart3, PieChart } from "lucide-react"
+import { Activity, Users, CreditCard, Settings, BarChart3, PieChart, Ticket } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -12,6 +12,7 @@ import { useAuth } from "@/hooks/use-auth"
 import UserManagement from "@/components/admin/UserManagement"
 import PaymentManagement from "@/components/admin/PaymentManagement"
 import SystemSettings from "@/components/admin/SystemSettings"
+import VoucherManagement from "@/components/admin/VoucherManagement"
 import { toast } from "sonner"
 import { motion } from "framer-motion"
 
@@ -119,10 +120,11 @@ export default function AdminDashboard() {
           {/* Minimalist Tabs */}
           <TabsList className="bg-transparent border-b border-border w-full justify-start h-auto p-0 rounded-none gap-6 overflow-x-auto">
             {[
-              { value: "overview", icon: Activity, label: "Overview" },
-              { value: "payments", icon: CreditCard, label: "Payments" },
-              { value: "users", icon: Users, label: "Users" },
-              { value: "settings", icon: Settings, label: "Settings" },
+              { value: "overview",  icon: Activity,   label: "Overview" },
+              { value: "payments",  icon: CreditCard,  label: "Payments" },
+              { value: "vouchers",  icon: Ticket,      label: "Vouchers" },
+              { value: "users",     icon: Users,       label: "Users" },
+              { value: "settings",  icon: Settings,    label: "Settings" },
             ].map((tab) => {
               const Icon = tab.icon
               return (
@@ -210,7 +212,8 @@ export default function AdminDashboard() {
 
           {/* OTHER TABS */}
           <TabsContent value="payments" className="outline-none"><PaymentManagement /></TabsContent>
-          <TabsContent value="users" className="outline-none"><UserManagement /></TabsContent>
+          <TabsContent value="vouchers" className="outline-none"><VoucherManagement /></TabsContent>
+          <TabsContent value="users"    className="outline-none"><UserManagement /></TabsContent>
           <TabsContent value="settings" className="outline-none"><SystemSettings /></TabsContent>
         </Tabs>
       </main>
