@@ -1,7 +1,9 @@
 // BullMQ payment processing worker for M-Pesa callbacks
 const { Worker } = require('bullmq');
+const { PaymentStatus } = require('@prisma/client');
 const prisma = require('../config/prismaClient');
 const { whitelistMAC } = require('../config/mikrotik');
+const { getPackageByAmount } = require('../lib/packages');
 const Redis = require('ioredis');
 
 let paymentWorker = null;
@@ -21,7 +23,7 @@ function initializePaymentWorker() {
     paymentWorker = new Worker('mpesa-payments', async job => {
       const { checkoutId, callbackData } = job.data;
       try {
-        // Idempotency: Only process if not already completed/failed
+        // ✅ Idempotency: find payment record
         const payment = await prisma.payment.findUnique({
           where: { mpesaRef: checkoutId },
         });
@@ -29,43 +31,65 @@ function initializePaymentWorker() {
           console.error('❌ Transaction not found for checkout ID:', checkoutId);
           return;
         }
-        if (payment.status === 'completed' || payment.status === 'failed') {
+
+        // ✅ Guard uses Prisma enum constants — NOT lowercase string literals
+        if (
+          payment.status === PaymentStatus.COMPLETED ||
+          payment.status === PaymentStatus.FAILED
+        ) {
           console.log('ℹ️ Payment already processed:', payment.status);
           return;
         }
-        const resultCode = callbackData?.ResultCode;
+
+        // ✅ Normalise ResultCode to number before comparison
+        const resultCode = Number(callbackData?.ResultCode);
         if (resultCode !== 0) {
           await prisma.payment.update({
             where: { mpesaRef: checkoutId },
-            data: { status: 'failed' }
+            data: {
+              status: PaymentStatus.FAILED,
+              failedAt: new Date()
+            }
           });
-          console.log('❌ Payment failed or canceled');
+          console.log('❌ Payment failed or canceled, ResultCode:', resultCode);
           return;
         }
-        const amount = callbackData?.CallbackMetadata?.Item?.find((item) => item.Name === 'Amount')?.Value;
-        const mpesaRef = callbackData?.CallbackMetadata?.Item?.find((item) => item.Name === 'MpesaReceiptNumber')?.Value;
+
+        const callbackAmount = Number(
+          callbackData?.CallbackMetadata?.Item?.find((item) => item.Name === 'Amount')?.Value
+        );
+        const mpesaReceipt = callbackData?.CallbackMetadata?.Item?.find(
+          (item) => item.Name === 'MpesaReceiptNumber'
+        )?.Value;
         const mac = payment.macAddress;
-        let time = '1Hr';
-        if (Number(amount) === 30) time = '24Hrs';
-        else if (Number(amount) === 20) time = '12Hrs';
-        else if (Number(amount) === 15) time = '4Hrs';
-        console.log(`✅ Whitelisting MAC ${mac} for ${time}...`);
-        const mikrotikResponse = await whitelistMAC(mac, time);
+
+        // ✅ Derive session duration from packages lib — no hardcoded if/else
+        const pkg = getPackageByAmount(callbackAmount || payment.amount);
+        const timeLabel = pkg ? pkg.timeLabel : '1Hr';
+
+        console.log(`✅ Whitelisting MAC ${mac} for ${timeLabel}...`);
+        const mikrotikResponse = await whitelistMAC(mac, timeLabel);
+
         if (mikrotikResponse.success) {
           await prisma.payment.update({
             where: { mpesaRef: checkoutId },
             data: {
-              status: 'completed',
-              mpesaRef: mpesaRef || checkoutId || null,
-              expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000)
+              status: PaymentStatus.COMPLETED,
+              mpesaRef: mpesaReceipt || checkoutId || null,
+              completedAt: new Date(),
+              expiresAt: pkg
+                ? new Date(Date.now() + pkg.duration)
+                : new Date(Date.now() + 60 * 60 * 1000) // fallback: 1 hour
             }
           });
           console.log('✅ Payment completed and MAC whitelisted');
         } else {
           console.error('❌ MikroTik Error:', mikrotikResponse.message);
+          // Do not mark as COMPLETED — leave PENDING so it can be retried
         }
       } catch (error) {
         console.error('❌ Payment Worker Error:', error);
+        throw error; // re-throw so BullMQ retries the job
       }
     }, { connection });
 
@@ -84,3 +108,4 @@ function initializePaymentWorker() {
 }
 
 module.exports = { initializePaymentWorker };
+
