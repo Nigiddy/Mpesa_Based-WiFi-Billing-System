@@ -4,17 +4,21 @@
  * Body: { code: string, macAddress: string }
  *
  * Flow:
- *  1. Look up the voucher and validate it isn't expired/fully-used
- *  2. Atomically increment currentUses + record VoucherRedemption (DB transaction)
- *  3. Whitelist the MAC address on MikroTik for the plan duration
+ *  1. Reject if MAC already has an active session (prevents session stacking)
+ *  2. Look up the voucher and validate it isn't expired/fully-used
+ *  3. Atomically increment currentUses + record VoucherRedemption (DB transaction)
+ *  4. Whitelist the MAC address on MikroTik for the plan duration
+ *  5. Create a Session record and schedule a BullMQ expiry job
  */
 
 const express = require('express');
 const prisma = require('../../config/prismaClient');
 const { paymentLimiter } = require('../../middleware/rateLimit');
 const { logAudit } = require('../../utils/auditLogger');
-const { PACKAGES } = require('../../lib/packages');
+const { PACKAGES, getPackageByPlanKey } = require('../../lib/packages');
 const { whitelistMAC } = require('../../config/mikrotik');
+const { checkMACAlreadyActive } = require('../../services/MACAddressService');
+const { getSessionExpiryQueue } = require('../../workers/timeoutWorkers');
 const { deriveVoucherStatus } = require('./helpers');
 
 const router = express.Router();
@@ -31,12 +35,23 @@ router.post('/redeem', paymentLimiter, async (req, res) => {
     }
 
     const normalizedCode = code.trim().toUpperCase();
+    const normalizedMAC  = macAddress.trim().toUpperCase();
     const clientIP =
       req.headers['x-forwarded-for']?.split(',')[0].trim() ||
       req.socket.remoteAddress ||
       'unknown';
 
-    // ── 1. Fetch & validate ────────────────────────────────────────────────
+    // ── 0. Reject if MAC already has an active session ─────────────────────
+    const activeCheck = await checkMACAlreadyActive(normalizedMAC);
+    if (activeCheck.hasActiveSession) {
+      return res.status(409).json({
+        success: false,
+        error: 'This device already has an active session.',
+        expiresAt: activeCheck.expiresAt,
+      });
+    }
+
+    // ── 1. Fetch & validate voucher ────────────────────────────────────────
     const voucher = await prisma.voucher.findUnique({ where: { code: normalizedCode } });
 
     if (!voucher) {
@@ -60,6 +75,10 @@ router.post('/redeem', paymentLimiter, async (req, res) => {
       });
     }
 
+    // Resolve the package for this planKey (for data cap + duration)
+    const pkg = getPackageByPlanKey(voucher.planKey);
+    const durationMs = pkg ? pkg.duration : Number(voucher.durationMs);
+
     // ── 2. Atomic DB update ────────────────────────────────────────────────
     let redemption;
     try {
@@ -68,7 +87,6 @@ router.post('/redeem', paymentLimiter, async (req, res) => {
         const locked = await tx.voucher.findUnique({ where: { code: normalizedCode } });
 
         if (locked.currentUses >= locked.maxUses) {
-          // Use a plain object so the outer catch can detect it cleanly
           throw { code: 'FULLY_USED' };
         }
 
@@ -80,7 +98,7 @@ router.post('/redeem', paymentLimiter, async (req, res) => {
         return tx.voucherRedemption.create({
           data: {
             voucherId:  locked.id,
-            macAddress: macAddress.toUpperCase(),
+            macAddress: normalizedMAC,
             ipAddress:  clientIP,
           },
         });
@@ -96,11 +114,11 @@ router.post('/redeem', paymentLimiter, async (req, res) => {
     }
 
     // ── 3. Whitelist MAC on MikroTik ───────────────────────────────────────
-    const mikrotikResult = await whitelistMAC(macAddress, voucher.planKey);
+    const mikrotikResult = await whitelistMAC(normalizedMAC, voucher.planKey, pkg);
 
     logAudit('voucher_redeemed', {
       code: normalizedCode,
-      macAddress,
+      macAddress: normalizedMAC,
       ip: clientIP,
       planKey: voucher.planKey,
       mikrotikSuccess: mikrotikResult.success,
@@ -108,13 +126,58 @@ router.post('/redeem', paymentLimiter, async (req, res) => {
 
     if (!mikrotikResult.success) {
       console.error(`⚠️ Voucher redeemed but MAC whitelist failed: ${mikrotikResult.message}`);
+    }
+
+    // ── 4. Create Session record & schedule expiry job ─────────────────────
+    const expiryTime = new Date(Date.now() + durationMs);
+    let newSession = null;
+
+    try {
+      newSession = await prisma.session.create({
+        data: {
+          // userId is intentionally null for voucher sessions (no phone / user)
+          macAddress:           normalizedMAC,
+          ipAddress:            clientIP,
+          expiryTime,
+          startTime:            new Date(),
+          voucherRedemptionId:  redemption.id,
+        },
+      });
+
+      // Schedule BullMQ delayed job to disconnect on expiry
+      const sessionExpiryQueue = getSessionExpiryQueue();
+      const delay = expiryTime.getTime() - Date.now();
+      if (sessionExpiryQueue && delay > 0) {
+        await sessionExpiryQueue.add(
+          'expire-session',
+          { sessionId: newSession.id, macAddress: normalizedMAC },
+          {
+            delay,
+            jobId: `session-expiry-${newSession.id}`,
+            removeOnComplete: true,
+          }
+        );
+        console.log(`[Voucher] Expiry job scheduled for session ${newSession.id} at ${expiryTime.toISOString()}`);
+      }
+    } catch (sessionErr) {
+      // Session tracking failure should not block the user from connecting
+      console.error('⚠️ Failed to create voucher session record:', sessionErr.message);
+      logAudit('voucher_session_create_failed', {
+        redemptionId: redemption.id,
+        macAddress: normalizedMAC,
+        error: sessionErr.message,
+      });
+    }
+
+    // ── 5. Respond ─────────────────────────────────────────────────────────
+    if (!mikrotikResult.success) {
       return res.status(207).json({
         success: true,
         warning: 'Voucher accepted but network access could not be granted automatically. Please contact support.',
         data: {
-          code: normalizedCode,
-          planKey: voucher.planKey,
-          durationMs: voucher.durationMs,
+          code:        normalizedCode,
+          planKey:     voucher.planKey,
+          durationMs,
           redemptionId: redemption.id,
         },
       });
@@ -124,11 +187,12 @@ router.post('/redeem', paymentLimiter, async (req, res) => {
       success: true,
       message: `Access granted for ${voucher.planKey}`,
       data: {
-        code: normalizedCode,
-        planKey: voucher.planKey,
-        durationMs: voucher.durationMs,
-        expiresAt: new Date(Date.now() + Number(voucher.durationMs)),
+        code:         normalizedCode,
+        planKey:      voucher.planKey,
+        durationMs,
+        expiresAt:    expiryTime,
         redemptionId: redemption.id,
+        sessionId:    newSession?.id || null,
       },
     });
   } catch (error) {

@@ -68,7 +68,7 @@ function initializePaymentWorker() {
         const timeLabel = pkg ? pkg.timeLabel : '1Hr';
 
         console.log(`✅ Whitelisting MAC ${mac} for ${timeLabel}...`);
-        const mikrotikResponse = await whitelistMAC(mac, timeLabel);
+        const mikrotikResponse = await whitelistMAC(mac, timeLabel, pkg);
 
         if (mikrotikResponse.success) {
           await prisma.payment.update({

@@ -263,7 +263,7 @@ async function setupPaymentWorker() {
         // ✅ STEP 7: Whitelist MAC address (External service call, outside of DB transaction)
         console.log(`🔓 Whitelisting MAC on router: ${payment.macAddress}`);
         const { whitelistMAC } = require('../config/mikrotik');
-        const mikrotikResult = await whitelistMAC(payment.macAddress, timeLabel);
+        const mikrotikResult = await whitelistMAC(payment.macAddress, timeLabel, pkg);
 
         if (!mikrotikResult.success) {
           // The core payment is already committed. We just flag that this part failed.

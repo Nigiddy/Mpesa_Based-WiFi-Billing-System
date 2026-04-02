@@ -121,26 +121,29 @@ model PaymentStatusUpdate {
   @@index([createdAt])
 }
 
-// ✅ NEW: Track user sessions
+// ✅ Track user sessions
 model Session {
   id              Int       @id @default(autoincrement())
-  userId          Int
-  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
+  userId          Int?      // nullable — voucher sessions have no associated User
+  user            User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+
   paymentId       Int?
   payment         Payment?  @relation(fields: [paymentId], references: [id], onDelete: SetNull)
-  
+
+  voucherRedemptionId Int?  // populated when session was started by a voucher
+  voucherRedemption   VoucherRedemption? @relation(fields: [voucherRedemptionId], references: [id], onDelete: SetNull)
+
   macAddress      String    // User's device MAC
   ipAddress       String?   // User's IP at connection
-  
+
   startTime       DateTime  @default(now())
   expiryTime      DateTime  // When session expires
   disconnectedAt  DateTime? // When user disconnected
-  reason          String?   // "expired", "admin_disconnect", "ip_change", etc.
-  
+  reason          String?   // "expired", "admin_disconnect", "idle_or_cap_mikrotik", etc.
+
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
-  
+
   @@index([userId])
   @@index([macAddress])
   @@index([expiryTime])
@@ -229,6 +232,9 @@ model VoucherRedemption {
   ipAddress  String?
 
   redeemedAt DateTime @default(now())
+
+  /// Sessions started by this redemption
+  sessions   Session[]
 
   @@index([voucherId])
   @@index([macAddress])

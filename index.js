@@ -11,6 +11,7 @@ const prisma = require('./config/prismaClient');
 const Redis = require('ioredis');
 const { validateSecrets, displaySecretsConfig } = require("./config/secrets");
 const { initWebSocket } = require("./services/websocket");
+const { getStatus: getMikrotikStatus, ensureHotspotProfiles } = require("./config/mikrotik");
 
 // ✅ Validate secrets on startup
 validateSecrets();
@@ -129,14 +130,30 @@ app.use((req, res) => {
 // ✅ Start Server
 const PORT = process.env.PORT || 5000;
 
-const server = app.listen(PORT, () => {
+const server = app.listen(PORT, async () => {
   console.log(`✅ Server running on port ${PORT}`);
   console.log(`✅ CORS allowed origin: ${FRONTEND_ORIGIN}`);
   console.log(`✅ Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log('✅ Background workers (BullMQ) started automatically via modules.');
-  
+
   // Initialize WebSocket Server
   initWebSocket(server);
+
+  // ── MikroTik startup checks ─────────────────────────────────────────────
+  const mikrotikStatus = await getMikrotikStatus();
+  if (mikrotikStatus.success) {
+    const d = mikrotikStatus.data;
+    console.log(`✅ MikroTik: ${d.status} [${d.mode || 'live'}] — ${d.connectedUsers} active user(s)${d.identity ? ` on '${d.identity}'` : ''}`);
+  } else {
+    console.warn(`⚠️  MikroTik connection FAILED at startup: ${mikrotikStatus.error}`);
+    console.warn('   Payments will still process but network access will not be granted until MikroTik is reachable.');
+  }
+
+  // Ensure hotspot user-profile with idle-timeout exists on the router
+  const profileResult = await ensureHotspotProfiles();
+  if (!profileResult.success && profileResult.mode !== 'dev') {
+    console.warn(`⚠️  MikroTik profile setup failed: ${profileResult.error}`);
+  }
 });
 
 // ✅ Graceful shutdown
