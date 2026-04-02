@@ -176,3 +176,61 @@ model AuditLog {
   @@index([userId])
   @@index([createdAt])
 }
+
+// ============================================
+// VOUCHER SYSTEM
+// ============================================
+
+model Voucher {
+  id          Int       @id @default(autoincrement())
+
+  /// Cryptographically random code — format: XXXX-XXXX-XXXX-XXXX
+  code        String    @unique
+
+  /// Package identifier matching lib/packages.js timeLabel ('1Hr', '4Hrs', '12Hrs', '24Hrs')
+  planKey     String
+
+  /// Session duration in milliseconds (copied from package at creation time)
+  durationMs  BigInt
+
+  /// How many times this voucher may be redeemed (usually 1)
+  maxUses     Int       @default(1)
+
+  /// Running count of successful redemptions
+  currentUses Int       @default(0)
+
+  /// Absolute expiry date — null means never expires
+  expiresAt   DateTime?
+
+  /// Admin who created this batch (null = system-generated)
+  createdBy   Int?
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  redemptions VoucherRedemption[]
+
+  @@index([code])
+  @@index([planKey])
+  @@index([expiresAt])
+  @@index([createdAt])
+}
+
+model VoucherRedemption {
+  id         Int      @id @default(autoincrement())
+
+  voucherId  Int
+  voucher    Voucher  @relation(fields: [voucherId], references: [id], onDelete: Cascade)
+
+  /// Device MAC address of the redeemer
+  macAddress String
+
+  /// Client IP at time of redemption
+  ipAddress  String?
+
+  redeemedAt DateTime @default(now())
+
+  @@index([voucherId])
+  @@index([macAddress])
+  @@index([redeemedAt])
+}
