@@ -1,74 +1,655 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <title>WiFi Payment</title>
   <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Qonnect WiFi — Get Connected</title>
+  <meta name="description" content="Pay with M-Pesa or enter a voucher code to access Qonnect WiFi." />
+
+  <!-- Prevent search engines from indexing the portal -->
+  <meta name="robots" content="noindex, nofollow" />
+
   <style>
-    body { font-family: Arial; padding: 20px; text-align: center; }
-    .box { max-width: 400px; margin: auto; background: #f4f4f4; padding: 20px; border-radius: 10px; }
-    input, select, button { width: 100%; margin: 10px 0; padding: 10px; }
+    :root {
+      --bg: #0f1117;
+      --card: #1a1d27;
+      --border: #2a2d3e;
+      --primary: #4f8ef7;
+      --primary-hover: #3a7aed;
+      --success: #22c55e;
+      --error: #ef4444;
+      --warning: #f59e0b;
+      --text: #f1f5f9;
+      --muted: #94a3b8;
+      --radius: 14px;
+      --font: 'Inter', system-ui, -apple-system, sans-serif;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: var(--font);
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px 16px;
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 32px 28px;
+      width: 100%;
+      max-width: 420px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 28px;
+    }
+
+    .logo-icon {
+      width: 40px; height: 40px;
+      background: linear-gradient(135deg, #4f8ef7, #7c3aed);
+      border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 20px;
+    }
+
+    .logo h1 { font-size: 1.25rem; font-weight: 700; }
+    .logo p  { font-size: 0.72rem; color: var(--muted); margin-top: 1px; }
+
+    /* Tab switcher */
+    .tabs {
+      display: flex;
+      gap: 4px;
+      background: rgba(255,255,255,0.05);
+      border-radius: 10px;
+      padding: 4px;
+      margin-bottom: 24px;
+    }
+
+    .tab-btn {
+      flex: 1;
+      padding: 8px 0;
+      border: none;
+      border-radius: 7px;
+      font-size: 0.82rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      background: transparent;
+      color: var(--muted);
+    }
+
+    .tab-btn.active {
+      background: var(--primary);
+      color: #fff;
+    }
+
+    /* Forms */
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    label {
+      display: block;
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--muted);
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .field { margin-bottom: 18px; }
+
+    input, select {
+      width: 100%;
+      padding: 11px 14px;
+      background: rgba(255,255,255,0.06);
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      color: var(--text);
+      font-size: 0.95rem;
+      font-family: var(--font);
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    input:focus, select:focus {
+      border-color: var(--primary);
+    }
+
+    select option { background: #1e2130; }
+
+    /* Package grid */
+    .packages {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-bottom: 18px;
+    }
+
+    .pkg-btn {
+      padding: 12px 8px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: rgba(255,255,255,0.04);
+      color: var(--text);
+      cursor: pointer;
+      text-align: center;
+      transition: all 0.2s;
+      font-family: var(--font);
+    }
+
+    .pkg-btn:hover { border-color: var(--primary); background: rgba(79,142,247,0.08); }
+
+    .pkg-btn.selected {
+      border-color: var(--primary);
+      background: rgba(79,142,247,0.15);
+    }
+
+    .pkg-btn .price  { font-size: 1.1rem; font-weight: 700; }
+    .pkg-btn .label  { font-size: 0.72rem; color: var(--muted); margin-top: 3px; }
+
+    /* Buttons */
+    .btn {
+      width: 100%;
+      padding: 13px;
+      border: none;
+      border-radius: 10px;
+      font-size: 1rem;
+      font-weight: 700;
+      cursor: pointer;
+      font-family: var(--font);
+      transition: all 0.2s;
+    }
+
+    .btn-primary {
+      background: var(--primary);
+      color: #fff;
+    }
+
+    .btn-primary:hover:not(:disabled) { background: var(--primary-hover); }
+
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    /* Status banner */
+    .status {
+      margin-top: 16px;
+      padding: 12px 14px;
+      border-radius: 9px;
+      font-size: 0.88rem;
+      line-height: 1.5;
+      display: none;
+    }
+
+    .status.show    { display: flex; align-items: flex-start; gap: 10px; }
+    .status.info    { background: rgba(79,142,247,0.12); border: 1px solid rgba(79,142,247,0.3); }
+    .status.success { background: rgba(34,197,94,0.12);  border: 1px solid rgba(34,197,94,0.3); }
+    .status.error   { background: rgba(239,68,68,0.12);  border: 1px solid rgba(239,68,68,0.3); }
+    .status.warning { background: rgba(245,158,11,0.12); border: 1px solid rgba(245,158,11,0.3); }
+
+    .status-icon { font-size: 1.1rem; flex-shrink: 0; margin-top: 1px; }
+
+    /* Loading spinner */
+    .spinner {
+      display: inline-block;
+      width: 16px; height: 16px;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      vertical-align: middle;
+      margin-right: 6px;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Device info footer */
+    .device-info {
+      margin-top: 20px;
+      padding-top: 16px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
+
+    .mac-badge {
+      font-family: monospace;
+      background: rgba(255,255,255,0.06);
+      padding: 3px 8px;
+      border-radius: 5px;
+      font-size: 0.73rem;
+    }
+
+    /* Progress bar for redirect countdown */
+    .redirect-bar {
+      height: 3px;
+      background: var(--border);
+      border-radius: 2px;
+      margin-top: 10px;
+      overflow: hidden;
+      display: none;
+    }
+
+    .redirect-bar.show { display: block; }
+
+    .redirect-fill {
+      height: 100%;
+      background: var(--success);
+      border-radius: 2px;
+      transition: width 0.1s linear;
+    }
   </style>
 </head>
 <body>
-  <div class="box">
-    <h2>Pay to Access WiFi</h2>
 
-    <form id="paymentForm">
-      <input type="tel" id="phone" placeholder="Enter Safaricom number" required />
-      
-      <select id="duration" required>
-        <option value="">Select Duration</option>
-        <option value="10">1 Hour (10 KES)</option>
-        <option value="15">4 Hours (15 KES)</option>
-        <option value="20">12 Hours (20 KES)</option>
-        <option value="30">24 Hours (30 KES)</option>
-      </select>
-
-      <input type="text" id="mac" placeholder="Device MAC (auto-filled if possible)" required />
-
-      <button type="submit">Pay with M-Pesa</button>
-    </form>
-
-    <p id="status"></p>
+<div class="card">
+  <!-- Logo -->
+  <div class="logo">
+    <div class="logo-icon">📶</div>
+    <div>
+      <h1>Qonnect WiFi</h1>
+      <p>Pay once · Connect instantly</p>
+    </div>
   </div>
 
-  <script>
-    // ✅ Set your backend URL here (no trailing slash)
-    const API_BASE_URL = window.location.origin; // or set explicitly: "https://yourdomain.com"
+  <!-- Tab switcher -->
+  <div class="tabs" role="tablist">
+    <button class="tab-btn active" id="tab-mpesa" role="tab" onclick="switchTab('mpesa')">M-Pesa</button>
+    <button class="tab-btn" id="tab-voucher" role="tab" onclick="switchTab('voucher')">Voucher</button>
+  </div>
 
-    document.getElementById("mac").value = window.location.search.split("mac=")[1]?.split("&")[0] || "";
+  <!-- ── M-Pesa tab ── -->
+  <div class="tab-panel active" id="panel-mpesa" role="tabpanel">
 
-    document.getElementById("paymentForm").addEventListener("submit", async function (e) {
-      e.preventDefault();
+    <!-- Package grid -->
+    <label>Select Package</label>
+    <div class="packages" id="packages-grid">
+      <!-- Populated by JS -->
+    </div>
 
-      const phone = document.getElementById("phone").value;
-      const amount = Number(document.getElementById("duration").value);
-      const macAddress = document.getElementById("mac").value;
+    <!-- Phone number -->
+    <div class="field">
+      <label for="phone">Safaricom Number</label>
+      <input
+        type="tel"
+        id="phone"
+        placeholder="07XX XXX XXX"
+        maxlength="10"
+        inputmode="numeric"
+        autocomplete="tel"
+      />
+    </div>
 
-      // Map selected amount to package name
-      const packageMap = { 10: "1Hr", 15: "4Hrs", 20: "12Hrs", 30: "24Hrs" };
-      const pkg = packageMap[amount] || "1Hr";
+    <button class="btn btn-primary" id="pay-btn" onclick="initiatePayment()">
+      Pay with M-Pesa
+    </button>
 
-      document.getElementById("status").innerText = "Processing payment...";
+    <div class="status info" id="mpesa-status">
+      <span class="status-icon">ℹ️</span>
+      <span id="mpesa-status-text"></span>
+    </div>
+
+    <div class="redirect-bar" id="mpesa-redirect-bar">
+      <div class="redirect-fill" id="mpesa-redirect-fill" style="width:0%"></div>
+    </div>
+  </div>
+
+  <!-- ── Voucher tab ── -->
+  <div class="tab-panel" id="panel-voucher" role="tabpanel">
+    <div class="field">
+      <label for="voucher-code">Voucher Code</label>
+      <input
+        type="text"
+        id="voucher-code"
+        placeholder="e.g. XXXX-XXXX-XXXX"
+        maxlength="20"
+        autocomplete="off"
+        style="text-transform: uppercase; letter-spacing: 0.05em;"
+      />
+    </div>
+
+    <button class="btn btn-primary" id="redeem-btn" onclick="redeemVoucher()">
+      Redeem Voucher
+    </button>
+
+    <div class="status info" id="voucher-status">
+      <span class="status-icon">ℹ️</span>
+      <span id="voucher-status-text"></span>
+    </div>
+
+    <div class="redirect-bar" id="voucher-redirect-bar">
+      <div class="redirect-fill" id="voucher-redirect-fill" style="width:0%"></div>
+    </div>
+  </div>
+
+  <!-- Device info -->
+  <div class="device-info">
+    <span>Your device</span>
+    <span class="mac-badge" id="mac-display">Detecting...</span>
+  </div>
+</div>
+
+<script>
+  // ────────────────────────────────────────────────────────────────────────────
+  // Config
+  // ────────────────────────────────────────────────────────────────────────────
+
+  const API_BASE = window.location.origin;
+
+  // Available packages (kept in sync with lib/packages.js on the backend)
+  const PACKAGES = [
+    { amount: 10,  label: '1 Hour',   price: 'KSh 10'  },
+    { amount: 15,  label: '4 Hours',  price: 'KSh 15'  },
+    { amount: 20,  label: '12 Hours', price: 'KSh 20'  },
+    { amount: 30,  label: '24 Hours', price: 'KSh 30'  },
+  ];
+
+  // ────────────────────────────────────────────────────────────────────────────
+  // Read URL params injected by MikroTik Hotspot redirect
+  //
+  // MikroTik appends these to the redirect URL:
+  //   mac         – device MAC address
+  //   ip          – device IP address
+  //   link-orig   – the URL the user was trying to reach (intended destination)
+  //   link-login-only – alternative param name used in some MikroTik versions
+  // ────────────────────────────────────────────────────────────────────────────
+
+  const params        = new URLSearchParams(window.location.search);
+  const MAC_ADDRESS   = (params.get('mac')  || '').toUpperCase() || 'UNAVAILABLE';
+  const CLIENT_IP     = params.get('ip')    || '';
+  const LINK_ORIG     = params.get('link-orig')
+                     || params.get('link-login-only')
+                     || params.get('linkOrig')
+                     || 'http://google.com';
+
+  // ────────────────────────────────────────────────────────────────────────────
+  // State
+  // ────────────────────────────────────────────────────────────────────────────
+
+  let selectedAmount  = 30;  // default package
+  let pollInterval    = null;
+  let pollTimeout     = null;
+
+  // ────────────────────────────────────────────────────────────────────────────
+  // Init
+  // ────────────────────────────────────────────────────────────────────────────
+
+  document.getElementById('mac-display').textContent = MAC_ADDRESS;
+
+  // Build package grid
+  const grid = document.getElementById('packages-grid');
+  PACKAGES.forEach(pkg => {
+    const btn = document.createElement('button');
+    btn.className = 'pkg-btn' + (pkg.amount === selectedAmount ? ' selected' : '');
+    btn.innerHTML = `<div class="price">${pkg.price}</div><div class="label">${pkg.label}</div>`;
+    btn.onclick = () => selectPackage(pkg.amount, btn);
+    grid.appendChild(btn);
+  });
+
+  // If MAC is unavailable, warn the user
+  if (MAC_ADDRESS === 'UNAVAILABLE') {
+    showStatus('mpesa', 'warning',
+      '⚠️ Your device MAC address could not be detected. Please ensure you connected through the hotspot Wi-Fi network.');
+  }
+
+  // ────────────────────────────────────────────────────────────────────────────
+  // UI helpers
+  // ────────────────────────────────────────────────────────────────────────────
+
+  function switchTab(tab) {
+    ['mpesa', 'voucher'].forEach(t => {
+      document.getElementById(`tab-${t}`).classList.toggle('active', t === tab);
+      document.getElementById(`panel-${t}`).classList.toggle('active',  t === tab);
+    });
+  }
+
+  function selectPackage(amount, clickedBtn) {
+    selectedAmount = amount;
+    document.querySelectorAll('.pkg-btn').forEach(b => b.classList.remove('selected'));
+    clickedBtn.classList.add('selected');
+  }
+
+  function showStatus(panel, type, message) {
+    const el   = document.getElementById(`${panel}-status`);
+    const text = document.getElementById(`${panel}-status-text`);
+    const icon = el.querySelector('.status-icon');
+
+    el.className = `status show ${type}`;
+    text.innerHTML = message;
+
+    const icons = { info: 'ℹ️', success: '✅', error: '❌', warning: '⚠️' };
+    icon.textContent = icons[type] || 'ℹ️';
+  }
+
+  function hideStatus(panel) {
+    document.getElementById(`${panel}-status`).classList.remove('show');
+  }
+
+  function setLoading(btnId, loading, label) {
+    const btn = document.getElementById(btnId);
+    btn.disabled = loading;
+    btn.innerHTML = loading
+      ? `<span class="spinner"></span>${label}`
+      : label;
+  }
+
+  /**
+   * Animate a progress bar over `durationMs` ms then call `onComplete`.
+   * Used for the "Redirecting in 3s…" feedback.
+   */
+  function animateRedirectBar(panel, durationMs, onComplete) {
+    const bar  = document.getElementById(`${panel}-redirect-bar`);
+    const fill = document.getElementById(`${panel}-redirect-fill`);
+    bar.classList.add('show');
+    fill.style.width = '0%';
+
+    let elapsed = 0;
+    const step  = 50;
+    const timer = setInterval(() => {
+      elapsed += step;
+      fill.style.width = Math.min((elapsed / durationMs) * 100, 100) + '%';
+      if (elapsed >= durationMs) {
+        clearInterval(timer);
+        onComplete();
+      }
+    }, step);
+  }
+
+  function redirectToDestination() {
+    window.location.href = LINK_ORIG;
+  }
+
+  // ────────────────────────────────────────────────────────────────────────────
+  // M-Pesa flow
+  // ────────────────────────────────────────────────────────────────────────────
+
+  async function initiatePayment() {
+    const phone = document.getElementById('phone').value.trim();
+
+    if (!phone || !/^(07|01)\d{8}$/.test(phone)) {
+      showStatus('mpesa', 'error',
+        'Enter a valid 10-digit Safaricom number (e.g. 0712345678).');
+      return;
+    }
+
+    if (MAC_ADDRESS === 'UNAVAILABLE') {
+      showStatus('mpesa', 'error',
+        'MAC address not detected. Connect through the hotspot Wi-Fi and try again.');
+      return;
+    }
+
+    // Map amount to package label (backend expects the label string)
+    const pkg = PACKAGES.find(p => p.amount === selectedAmount);
+    if (!pkg) return;
+
+    // Format phone as 254XXXXXXXXX
+    const formattedPhone = '254' + phone.substring(1);
+
+    setLoading('pay-btn', true, 'Sending STK push…');
+    hideStatus('mpesa');
+
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/payments/initiate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phone:      formattedPhone,
+          amount:     selectedAmount,
+          package:    pkg.label,      // e.g. "1 Hour"
+          macAddress: MAC_ADDRESS,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        throw new Error(data.message || data.error || 'Payment initiation failed');
+      }
+
+      const { transactionId } = data.data;
+
+      showStatus('mpesa', 'info',
+        '📱 Check your phone — enter your M-Pesa PIN to complete payment.');
+      setLoading('pay-btn', true, 'Waiting for PIN…');
+
+      startPolling(transactionId);
+
+    } catch (err) {
+      showStatus('mpesa', 'error', err.message);
+      setLoading('pay-btn', false, 'Pay with M-Pesa');
+    }
+  }
+
+  function startPolling(transactionId) {
+    let attempts = 0;
+    const MAX_ATTEMPTS = 24; // 24 × 5 s = 2 minutes
+
+    pollInterval = setInterval(async () => {
+      attempts++;
 
       try {
-        const res = await fetch(`${API_BASE_URL}/api/v1/payments/initiate`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ phone, amount, macAddress, package: pkg })
-        });
-
+        const res  = await fetch(`${API_BASE}/api/v1/payments/status/${transactionId}`);
         const data = await res.json();
 
-        if (data.success) {
-          document.getElementById("status").innerText = "STK sent. Complete payment on your phone.";
-        } else {
-          document.getElementById("status").innerText = "Payment failed: " + (data.message || data.error);
+        if (!data.success) return; // transient error, keep polling
+
+        const status = data.data?.status;
+
+        if (status === 'completed') {
+          stopPolling();
+          onPaymentSuccess();
+
+        } else if (status === 'failed' || status === 'fraud_detected') {
+          stopPolling();
+          showStatus('mpesa', 'error',
+            'Payment was declined or cancelled. Please try again.');
+          setLoading('pay-btn', false, 'Pay with M-Pesa');
+
+        } else if (status === 'timeout' || attempts >= MAX_ATTEMPTS) {
+          stopPolling();
+          showStatus('mpesa', 'warning',
+            'Payment confirmation timed out. Please check your M-Pesa messages and try again if needed.');
+          setLoading('pay-btn', false, 'Pay with M-Pesa');
         }
-      } catch (err) {
-        document.getElementById("status").innerText = "Error: Could not reach server.";
+      } catch (_) {
+        // Network blip — keep polling
       }
-    });
-  </script>
+    }, 5000);
+  }
+
+  function stopPolling() {
+    if (pollInterval)  clearInterval(pollInterval);
+    if (pollTimeout)   clearTimeout(pollTimeout);
+    pollInterval = null;
+    pollTimeout  = null;
+  }
+
+  function onPaymentSuccess() {
+    showStatus('mpesa', 'success',
+      '✅ Payment confirmed! You are now connected. Redirecting you to your destination…');
+    setLoading('pay-btn', false, 'Connected ✓');
+
+    animateRedirectBar('mpesa', 3000, redirectToDestination);
+  }
+
+  // ────────────────────────────────────────────────────────────────────────────
+  // Voucher flow
+  // ────────────────────────────────────────────────────────────────────────────
+
+  async function redeemVoucher() {
+    const code = document.getElementById('voucher-code').value.trim().toUpperCase();
+
+    if (!code || code.length < 4) {
+      showStatus('voucher', 'error', 'Please enter a valid voucher code.');
+      return;
+    }
+
+    if (MAC_ADDRESS === 'UNAVAILABLE') {
+      showStatus('voucher', 'error',
+        'MAC address not detected. Connect through the hotspot Wi-Fi and try again.');
+      return;
+    }
+
+    setLoading('redeem-btn', true, 'Redeeming…');
+    hideStatus('voucher');
+
+    try {
+      const res = await fetch(`${API_BASE}/api/vouchers/redeem`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          code,
+          macAddress: MAC_ADDRESS,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (res.status === 409) {
+        // Device already has an active session
+        const exp = data.expiresAt
+          ? `Expires ${new Date(data.expiresAt).toLocaleTimeString()}`
+          : '';
+        showStatus('voucher', 'info',
+          `✅ Your device already has an active session. ${exp}`);
+        setLoading('redeem-btn', false, 'Redeem Voucher');
+        animateRedirectBar('voucher', 2000, redirectToDestination);
+        return;
+      }
+
+      if (!res.ok || !data.success) {
+        throw new Error(data.message || data.error || 'Voucher redemption failed');
+      }
+
+      // Success
+      const pkg = data.data?.planKey || '';
+      showStatus('voucher', 'success',
+        `✅ Voucher accepted! ${pkg ? `(${pkg}) ` : ''}Redirecting you to your destination…`);
+      setLoading('redeem-btn', false, 'Connected ✓');
+
+      animateRedirectBar('voucher', 3000, redirectToDestination);
+
+    } catch (err) {
+      showStatus('voucher', 'error', err.message);
+      setLoading('redeem-btn', false, 'Redeem Voucher');
+    }
+  }
+</script>
 </body>
 </html>

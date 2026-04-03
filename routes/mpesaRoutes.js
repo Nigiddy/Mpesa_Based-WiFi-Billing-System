@@ -11,6 +11,8 @@ const prisma = require("../config/prismaClient");
 const { stkPush } = require("../config/mpesa");
 const { validatePaymentInitiationMiddleware } = require("../middleware/validationMiddleware");
 const { paymentLimiter } = require("../middleware/rateLimit");
+const { verifyMACvsARP } = require('../utils/arpLookup');
+const { logAudit } = require('../utils/auditLogger');
 
 const { PaymentStatus } = require("@prisma/client");
 const { getPaymentTimeoutQueue } = require("../workers/timeoutWorkers");
@@ -55,6 +57,32 @@ router.post(
           error: 'Payment already in progress',
           message: 'A payment is already being processed for this number. Please wait for confirmation.'
         });
+      }
+
+      // 🔍 ARP cross-check: verify submitted MAC matches router ARP entry for this IP.
+      // Fails open (just logs) when ARP is unavailable (cloud/VPN deployments).
+      const arpResult = await verifyMACvsARP(req.ip, mac);
+      if (arpResult.reason === 'mismatch') {
+        console.warn(
+          `⚠️  MAC mismatch for ${req.ip}: submitted=${mac}, arp=${arpResult.arpMAC}`
+        );
+        logAudit('payment_mac_arp_mismatch', {
+          ip: req.ip,
+          submittedMAC: mac,
+          arpMAC: arpResult.arpMAC,
+        });
+        // Block the payment — the client is presenting a MAC that doesn’t match
+        // what the router recorded for their IP address.
+        return res.status(400).json({
+          success: false,
+          error: 'MAC address verification failed',
+          message: 'The MAC address provided does not match your device. Please reconnect to the hotspot and try again.',
+        });
+      }
+
+      if (arpResult.reason === 'arp_unavailable') {
+        // Soft warning only — don’t block; allow payment to continue.
+        console.warn(`ℹ️  ARP unavailable for ${req.ip} — MAC unverified (non-blocking)`);
       }
 
       // Generate unique transaction ID with randomness

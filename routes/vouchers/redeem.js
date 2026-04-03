@@ -20,6 +20,7 @@ const { whitelistMAC } = require('../../config/mikrotik');
 const { checkMACAlreadyActive } = require('../../services/MACAddressService');
 const { getSessionExpiryQueue } = require('../../workers/timeoutWorkers');
 const { deriveVoucherStatus } = require('./helpers');
+const { verifyMACvsARP } = require('../../utils/arpLookup');
 
 const router = express.Router();
 
@@ -40,6 +41,22 @@ router.post('/redeem', paymentLimiter, async (req, res) => {
       req.headers['x-forwarded-for']?.split(',')[0].trim() ||
       req.socket.remoteAddress ||
       'unknown';
+
+    // 🔍 ARP cross-check: verify MAC matches router ARP entry for this IP.
+    const arpResult = await verifyMACvsARP(req.ip, normalizedMAC);
+    if (arpResult.reason === 'mismatch') {
+      console.warn(`⚠️  Voucher MAC mismatch for ${req.ip}: submitted=${normalizedMAC}, arp=${arpResult.arpMAC}`);
+      logAudit('voucher_mac_arp_mismatch', {
+        ip: req.ip,
+        submittedMAC: normalizedMAC,
+        arpMAC: arpResult.arpMAC,
+      });
+      return res.status(400).json({
+        success: false,
+        error: 'MAC address verification failed',
+        message: 'The MAC address provided does not match your device. Please reconnect to the Wi-Fi and try again.',
+      });
+    }
 
     // ── 0. Reject if MAC already has an active session ─────────────────────
     const activeCheck = await checkMACAlreadyActive(normalizedMAC);
