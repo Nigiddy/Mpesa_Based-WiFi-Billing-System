@@ -2,7 +2,7 @@ const { Worker, Queue } = require('bullmq');
 const Redis = require('ioredis');
 const prisma = require('../config/prismaClient');
 const { PaymentStatus } = require('@prisma/client');
-const { disconnectByMac, whitelistMAC } = require('../config/mikrotik');
+const { disconnectByMac, whitelistMAC, getActiveMACSet, getActiveDevices } = require('../config/mikrotik');
 const { logAudit } = require('../utils/auditLogger');
 
 const connection = new Redis(process.env.REDIS_URL || 'redis://localhost:6379', {
@@ -102,7 +102,9 @@ const macWhitelistRetryWorker = new Worker('mac-whitelist-retry', async (job) =>
       return;
     }
 
-    const mikrotikResult = await whitelistMAC(payment.macAddress, timeLabel);
+    const { getPackageByAmount } = require('../lib/packages');
+    const pkg = getPackageByAmount(payment.amount);
+    const mikrotikResult = await whitelistMAC(payment.macAddress, timeLabel, pkg);
 
     if (mikrotikResult.success) {
       // Success! Update status back to COMPLETED
@@ -146,9 +148,138 @@ function getMacWhitelistRetryQueue() {
   return macWhitelistRetryQueue;
 }
 
+// --- Session Sync Worker (Inactivity / Data Cap) ---
+//
+// Runs every 2 minutes. Compares DB active sessions against MikroTik's
+// live hotspot active list. Any session whose MAC is no longer active on
+// the router (kicked by idle-timeout or data cap) is marked disconnected.
+// Also enforces application-level data caps for extra safety.
+//
+const sessionSyncQueue = new Queue('session-sync', { connection });
+
+// Schedule one repeatable sync job if not already scheduled
+(async () => {
+  try {
+    const existing = await sessionSyncQueue.getRepeatableJobs();
+    const alreadyScheduled = existing.some((j) => j.name === 'sync-sessions');
+    if (!alreadyScheduled) {
+      await sessionSyncQueue.add(
+        'sync-sessions',
+        {},
+        {
+          repeat: { every: 2 * 60 * 1000 }, // every 2 minutes
+          removeOnComplete: true,
+          removeOnFail: false,
+        }
+      );
+      console.log('[Session Sync] Repeatable job scheduled (every 2 min)');
+    }
+  } catch (err) {
+    console.warn('[Session Sync] Could not schedule repeatable job:', err.message);
+  }
+})();
+
+const sessionSyncWorker = new Worker(
+  'session-sync',
+  async () => {
+    console.log('[Session Sync] Running reconciliation...');
+
+    // 1. Fetch all DB sessions that are still considered active
+    const activeSessions = await prisma.session.findMany({
+      where: {
+        disconnectedAt: null,
+        expiryTime: { gt: new Date() },
+      },
+      select: { id: true, macAddress: true },
+    });
+
+    if (activeSessions.length === 0) return;
+
+    // 2. Get the set of MACs currently active on MikroTik
+    const { success, macs: activeMACsOnRouter } = await getActiveMACSet();
+
+    // If MikroTik is unreachable, skip sync (don't wrongly close all sessions)
+    if (!success) {
+      console.warn('[Session Sync] MikroTik unreachable — skipping reconciliation this cycle.');
+      return;
+    }
+
+    // 3. Find sessions whose MAC is no longer on the router
+    let idleDisconnected = 0;
+    for (const session of activeSessions) {
+      const mac = session.macAddress.toUpperCase();
+      if (!activeMACsOnRouter.has(mac)) {
+        // Device was kicked by MikroTik (idle-timeout or data cap)
+        await prisma.session.update({
+          where: { id: session.id },
+          data: {
+            disconnectedAt: new Date(),
+            reason: 'idle_or_cap_mikrotik',
+          },
+        }).catch((e) =>
+          console.error(`[Session Sync] Failed to update session ${session.id}:`, e.message)
+        );
+        logAudit('SESSION_IDLE_DISCONNECTED', { sessionId: session.id, macAddress: mac });
+        idleDisconnected++;
+      }
+    }
+
+    // 4. Application-level data cap check for extra safety
+    //    (catches cases where MikroTik didn't enforce it)
+    const { getPackageByPlanKey } = require('../lib/packages');
+    const devicesResult = await getActiveDevices();
+    if (devicesResult.success) {
+      for (const device of devicesResult.data) {
+        const mac = (device.macAddress || '').toUpperCase();
+        const session = activeSessions.find((s) => s.macAddress.toUpperCase() === mac);
+        if (!session) continue;
+
+        // Retrieve the linked payment to find the plan
+        const payment = await prisma.payment.findFirst({
+          where: { macAddress: mac, status: 'COMPLETED' },
+          orderBy: { completedAt: 'desc' },
+          select: { amount: true },
+        });
+        if (!payment) continue;
+
+        const { getPackageByAmount } = require('../lib/packages');
+        const pkg = getPackageByAmount(payment.amount);
+        if (!pkg || !pkg.dataCapBytes || pkg.dataCapBytes === 0) continue;
+
+        const totalBytes = (device.bytesIn || 0) + (device.bytesOut || 0);
+        if (totalBytes >= pkg.dataCapBytes) {
+          console.log(`[Data Cap] ${mac} exceeded cap (${totalBytes} >= ${pkg.dataCapBytes}). Disconnecting.`);
+          await disconnectByMac(mac);
+          await prisma.session.update({
+            where: { id: session.id },
+            data: { disconnectedAt: new Date(), reason: 'data_cap_exceeded' },
+          }).catch(() => {});
+          logAudit('SESSION_DATA_CAP_EXCEEDED', { sessionId: session.id, macAddress: mac, totalBytes, capBytes: pkg.dataCapBytes });
+        }
+      }
+    }
+
+    if (idleDisconnected > 0) {
+      console.log(`[Session Sync] Marked ${idleDisconnected} session(s) as idle-disconnected.`);
+    } else {
+      console.log('[Session Sync] All active DB sessions confirmed on MikroTik.');
+    }
+  },
+  { connection }
+);
+
+sessionSyncWorker.on('failed', (job, err) => {
+  console.error('[Session Sync] Job failed:', err.message);
+  logAudit('SESSION_SYNC_WORKER_FAILURE', { error: err.message });
+});
+
+function getSessionSyncQueue() {
+  return sessionSyncQueue;
+}
+
 module.exports = {
   getPaymentTimeoutQueue,
   getSessionExpiryQueue,
   getMacWhitelistRetryQueue,
-  // We don't need to export the workers themselves, just the queues
+  getSessionSyncQueue,
 };
