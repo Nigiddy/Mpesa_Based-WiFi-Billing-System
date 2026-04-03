@@ -17,9 +17,19 @@ export function usePayment() {
   const [hasActiveSession, setHasActiveSession] = useState(false)
   const [showSuccessModal, setShowSuccessModal] = useState(false)
   const [paymentData, setPaymentData] = useState<any>(null)
+  // Capture the URL the user was trying to reach before being caught by the captive portal.
+  // MikroTik injects this as ?link-orig=<url> (or ?link-login-only=<url>).
+  const [linkOrig, setLinkOrig] = useState<string>('http://google.com')
   const searchParams = useSearchParams()
 
   useEffect(() => {
+    // Capture intended destination for post-payment redirect
+    const orig = searchParams.get('link-orig')
+      || searchParams.get('link-login-only')
+      || searchParams.get('linkOrig')
+      || 'http://google.com'
+    setLinkOrig(orig)
+
     const macFromUrl = searchParams.get("mac")
     if (macFromUrl) {
       setMacAddress(macFromUrl)
@@ -28,10 +38,11 @@ export function usePayment() {
         if (response.success && response.data?.hasActiveSession) {
           setHasActiveSession(true)
           console.log("User has active session, expires at:", response.data.expiresAt)
-          // Here you could redirect or show a different UI
           toast.info("You already have an active session.", {
             description: `It expires at ${new Date(response.data.expiresAt!).toLocaleString()}`,
           })
+          // Redirect to intended destination — they're already connected
+          setTimeout(() => { window.location.href = orig }, 2500)
         }
       })
     } else {
@@ -94,19 +105,22 @@ export function usePayment() {
           clearInterval(interval)
           setStatus("completed")
           setIsLoading(false)
-          setPaymentData(response.data.paymentDetails)
+          setPaymentData(response.data)  // PaymentResponse shape: { status, mpesaRef, expiresAt }
           setShowSuccessModal(true)
           toast.success("Payment successful!", {
             id: "payment-toast",
-            description: `Your ${response.data.paymentDetails.package} package is now active.`,
+            description: `WiFi access granted until ${response.data.expiresAt ? new Date(response.data.expiresAt).toLocaleTimeString() : 'session expires'}. Redirecting…`,
           })
+          // Redirect to the user’s intended destination after a short delay
+          // so they can see the success toast before being navigated away.
+          setTimeout(() => { window.location.href = linkOrig }, 3000)
         } else if (response.success && response.data?.status === "failed") {
           clearInterval(interval)
           setStatus("failed")
           setIsLoading(false)
           toast.error("Payment Failed", {
             id: "payment-toast",
-            description: response.data.message || "Please try again.",
+            description: "Your payment was declined or cancelled. Please try again.",
           })
         }
         // If status is still pending, the loop continues

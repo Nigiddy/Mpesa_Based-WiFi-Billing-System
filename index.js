@@ -3,7 +3,9 @@ const cors = require("cors");
 const bodyParser = require("body-parser");
 const helmet = require("helmet");
 const cookieParser = require("cookie-parser");
+const path = require("path");
 const enforceHTTPS = require("./middleware/enforceHTTPS");
+const { verifyMACvsARP } = require("./utils/arpLookup");
 require("dotenv").config();
 
 // ✅ Custom imports for health checks and secrets
@@ -62,6 +64,17 @@ app.use(
   })
 );
 
+// ✅ Serve captive portal static files
+// MikroTik Hotspot redirect should point to: http://<server>/portal
+// This also powers the hotspot/login.html file via http://<server>/hotspot/login.html
+app.use('/hotspot', express.static(path.join(__dirname, 'hotspot')));
+
+// /portal → redirect alias so MikroTik's login-url config stays simple
+app.get('/portal', (req, res) => {
+  // Preserve all query params (mac, ip, link-orig, etc.) injected by MikroTik
+  res.sendFile(path.join(__dirname, 'hotspot', 'login.html'));
+});
+
 // ✅ Middleware
 app.use(cookieParser());
 app.use(bodyParser.json({ limit: '10mb' }));
@@ -83,6 +96,38 @@ app.use("/api/v1", mpesaRoutesV1); // Secure payment endpoints (rate limited int
 app.use("/", mpesaCallbackV2);     // Secure callback handler
 app.use("/auth", authRoutes);
 app.use("/api/vouchers", voucherRoutes); // Voucher feature (routes/vouchers/)
+
+// ✅ RFC 8910 Captive Portal API
+// Modern OS captive portal detectors (iOS, Android, macOS, Windows) call this
+// endpoint automatically after connecting to a network. Returning `captive: true`
+// causes the OS to display the portal UI without the user needing to open a browser.
+app.get("/api/v1/captive-portal", async (req, res) => {
+  try {
+    const mac = (req.query.mac || req.ip || '').toUpperCase();
+    let isAuthenticated = false;
+
+    if (mac) {
+      const { checkMACAlreadyActive } = require('./services/MACAddressService');
+      const check = await checkMACAlreadyActive(mac);
+      isAuthenticated = check.hasActiveSession === true;
+    }
+
+    const portalOrigin = process.env.PORTAL_URL ||
+      `${req.protocol}://${req.headers.host}`;
+
+    res.set('Cache-Control', 'no-store');
+    res.json({
+      captive:          !isAuthenticated,
+      'user-portal-url': `${portalOrigin}/portal?mac=${encodeURIComponent(mac)}`,
+      'venue-info-url':  `${portalOrigin}/about`,
+      // seconds-remaining is meaningless when captive — omit it
+      ...(isAuthenticated ? { 'seconds-remaining': null } : {}),
+    });
+  } catch (err) {
+    console.error('Captive portal API error:', err);
+    res.status(500).json({ captive: true });
+  }
+});
 
 // ✅ Comprehensive Health Check Route
 app.get("/", async (req, res) => {

@@ -1,0 +1,32 @@
+# Qonnect WiFi Captive Portal — Reverse Proxy Configuration
+#
+# RECOMMENDED: Caddy (auto-provisions Let's Encrypt TLS, zero config)
+# Docs: https://caddyserver.com/docs/
+#
+# Replace `portal.yourdomain.com` with your actual public domain.
+# Caddy will obtain and renew the TLS certificate automatically.
+#
+# Install: https://caddyserver.com/docs/install
+# Run: caddy run --config Caddyfile
+
+portal.yourdomain.com {
+    # Proxy everything to the Node.js backend
+    reverse_proxy localhost:5000
+
+    # Pass real client IP to Express (required for trust proxy + ARP lookups)
+    header_up X-Real-IP {remote_host}
+    header_up X-Forwarded-For {remote_host}
+    header_up X-Forwarded-Proto {scheme}
+
+    # Enable gzip compression
+    encode gzip
+
+    # Logging
+    log {
+        output file /var/log/caddy/portal-access.log
+        format json
+    }
+}
+
+# (Optional) Redirect bare HTTP on port 80 to HTTPS — Caddy does this
+# automatically for HTTPS sites, so no explicit block is needed.
