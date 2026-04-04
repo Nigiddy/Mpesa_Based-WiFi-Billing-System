@@ -355,7 +355,7 @@ export const PaymentProcessingFlow = ({
                   <XCircle className="w-10 h-10 text-white" />
                 </motion.div>
                 <h2 className="text-3xl font-bold mb-2">❌ Payment Failed</h2>
-                <p className="text-red-100">Please try again or contact support</p>
+                <p className="text-destructive/80">Please try again or contact support</p>
               </div>
 
               <CardContent className="pt-8">

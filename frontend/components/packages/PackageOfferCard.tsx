@@ -83,11 +83,11 @@ export const PackageOfferCard = ({ pkg, index = 0 }) => {
               >
                 <div className={cn(
                   "flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center mt-0.5",
-                  pkg.popular ? "bg-primary/10" : "bg-green-500/10"
+                  pkg.popular ? "bg-primary/10" : "bg-success/10"
                 )}>
                   <Check className={cn(
                     "w-3.5 h-3.5",
-                    pkg.popular ? "text-primary" : "text-green-600"
+                    pkg.popular ? "text-primary" : "text-success"
                   )} />
                 </div>
                 <span className="text-sm text-foreground leading-relaxed">{feature}</span>

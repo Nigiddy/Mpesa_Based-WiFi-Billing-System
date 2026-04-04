@@ -99,7 +99,7 @@ export const QuickActions = ({ onRestart, onBackup, onDisconnectAll }: QuickActi
                         </AlertDialogHeader>
                         <AlertDialogFooter>
                             <AlertDialogCancel>Cancel</AlertDialogCancel>
-                            <AlertDialogAction className="bg-red-600 focus:ring-red-600" onClick={handleFactoryReset}>
+                            <AlertDialogAction className="bg-destructive focus:ring-destructive" onClick={handleFactoryReset}>
                                 Reset
                             </AlertDialogAction>
                         </AlertDialogFooter>

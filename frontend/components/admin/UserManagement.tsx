@@ -128,7 +128,7 @@ const UserManagement = () => {
             toast.info("Exporting user data...", { duration: 2000 })
             // TODO: Implement export functionality
           }}
-          className="bg-blue-600 hover:bg-blue-700 text-white"
+          className="bg-primary hover:bg-primary/90 text-primary-foreground"
         >
           <Download className="h-4 w-4 mr-2" />
           Export
@@ -191,7 +191,7 @@ const UserManagement = () => {
                               <DropdownMenuItem onClick={() => handleUserAction(user.id, "block")}> <UserX className="h-4 w-4 mr-2" /> Block User </DropdownMenuItem>
                             )}
                             <DropdownMenuItem
-                              className="text-red-600"
+                              className="text-destructive"
                               onClick={() => {
                                 if (confirm("Are you sure you want to delete this user? This action cannot be undone.")) {
                                   handleUserAction(user.id, "delete")

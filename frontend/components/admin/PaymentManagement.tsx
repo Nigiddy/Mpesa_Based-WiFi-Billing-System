@@ -98,7 +98,7 @@ const PaymentManagement = () => {
             toast.info("Exporting transaction data...", { duration: 2000 })
             // TODO: Implement export functionality
           }}
-          className="bg-blue-600 hover:bg-blue-700 text-white"
+          className="bg-primary hover:bg-primary/90 text-primary-foreground"
         >
           <Download className="h-4 w-4 mr-2" />
           Export

@@ -24,7 +24,6 @@ export interface PackageOption {
 interface PremiumPackageCardProps {
   package: PackageOption
   isSelected: boolean
-  isPopular?: boolean
   onSelect: () => void
   index?: number
   disabled?: boolean
@@ -33,7 +32,6 @@ interface PremiumPackageCardProps {
 export const PremiumPackageCard = ({
   package: pkg,
   isSelected,
-  isPopular = pkg.popular,
   onSelect,
   index = 0,
   disabled = false,
@@ -83,7 +81,7 @@ export const PremiumPackageCard = ({
         )}
       >
         {/* Popular Badge */}
-        {isPopular && (
+        {pkg.popular && (
           <motion.div
             initial={{ scale: 0, rotate: -180 }}
             animate={{ scale: 1, rotate: 0 }}

@@ -76,7 +76,7 @@ export function PaymentSuccessModal({ isOpen, onClose, paymentData }: PaymentSuc
               <CheckCircle className="w-8 h-8" />
             </div>
             <h2 className="text-2xl font-bold mb-2">Payment Successful!</h2>
-            <p className="text-green-100">You're now connected to the internet</p>
+            <p className="text-success/80">You're now connected to the internet</p>
           </div>
 
           {/* Close Button */}
@@ -96,15 +96,15 @@ export function PaymentSuccessModal({ isOpen, onClose, paymentData }: PaymentSuc
               <CardContent className="p-4">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-3">
-                    <div className="p-2 bg-blue-500/10 rounded-full">
-                      <Wifi className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                    <div className="p-2 bg-primary/10 rounded-full">
+                      <Wifi className="h-5 w-5 text-primary" />
                     </div>
                     <div>
                       <p className="font-semibold text-slate-900 dark:text-white">Connected</p>
                       <p className="text-sm text-slate-600 dark:text-slate-400">{paymentData.speed} Speed</p>
                     </div>
                   </div>
-                  <Badge className="bg-green-500/10 text-green-600 dark:text-green-400 border-green-500/20">
+                  <Badge className="bg-success/10 text-success border-success/20">
                     Active
                   </Badge>
                 </div>
@@ -128,8 +128,8 @@ export function PaymentSuccessModal({ isOpen, onClose, paymentData }: PaymentSuc
               <CardContent className="p-4">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-3">
-                    <div className="p-2 bg-orange-500/10 rounded-full">
-                      <Clock className="h-5 w-5 text-orange-600 dark:text-orange-400" />
+                    <div className="p-2 bg-warning/10 rounded-full">
+                      <Clock className="h-5 w-5 text-warning" />
                     </div>
                     <div>
                       <p className="font-semibold text-slate-900 dark:text-white">Time Remaining</p>
@@ -139,7 +139,7 @@ export function PaymentSuccessModal({ isOpen, onClose, paymentData }: PaymentSuc
                     </div>
                   </div>
                   <div className="text-right">
-                    <p className="text-2xl font-bold text-orange-600 dark:text-orange-400">{timeLeft}</p>
+                    <p className="text-2xl font-bold text-warning">{timeLeft}</p>
                   </div>
                 </div>
               </CardContent>
@@ -166,7 +166,7 @@ export function PaymentSuccessModal({ isOpen, onClose, paymentData }: PaymentSuc
 
             {/* Action Buttons */}
             <div className="flex space-x-3">
-              <Button onClick={handleDownloadReceipt} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white">
+              <Button onClick={handleDownloadReceipt} className="flex-1 bg-primary hover:bg-primary/90 text-primary-foreground">
                 <Download className="w-4 h-4 mr-2" />
                 Download Receipt
               </Button>

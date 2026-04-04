@@ -148,7 +148,7 @@ function CopyButton({ text }: { text: string }) {
       title="Copy code"
       className="ml-2 text-muted-foreground hover:text-foreground transition-colors"
     >
-      {copied ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
+      {copied ? <Check className="w-3.5 h-3.5 text-success" /> : <Copy className="w-3.5 h-3.5" />}
     </button>
   )
 }
@@ -261,10 +261,10 @@ export default function VoucherManagement() {
       {/* Summary cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[
-          { label: "Unused",  value: counts.unused,     color: "text-blue-400" },
-          { label: "Active",  value: counts.active,     color: "text-green-400" },
-          { label: "Used",    value: counts.fully_used, color: "text-zinc-400" },
-          { label: "Expired", value: counts.expired,    color: "text-red-400" },
+          { label: "Unused",  value: counts.unused,     color: "text-primary" },
+          { label: "Active",  value: counts.active,     color: "text-success" },
+          { label: "Used",    value: counts.fully_used, color: "text-muted-foreground" },
+          { label: "Expired", value: counts.expired,    color: "text-destructive" },
         ].map((s) => (
           <div key={s.label} className="bg-card border border-border/50 rounded-xl p-4">
             <p className="text-xs text-muted-foreground mb-1">{s.label}</p>
