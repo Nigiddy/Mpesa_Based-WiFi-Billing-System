@@ -1,9 +1,6 @@
 // API configuration optimized for Node.js/Express backend
 if (!process.env.NEXT_PUBLIC_API_URL) {
-  throw new Error(
-    'NEXT_PUBLIC_API_URL environment variable is required. '
-    + 'Please set it in .env.local or your deployment environment.'
-  )
+  
 }
 export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL
 
