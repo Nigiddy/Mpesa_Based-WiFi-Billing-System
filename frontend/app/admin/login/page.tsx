@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -18,9 +18,26 @@ export default function AdminLogin() {
   const [password, setPassword] = useState("")
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [redirectTo, setRedirectTo] = useState("/admin")
   
-  const { login } = useAuth()
+  const { login, isAuthenticated, loading: authLoading } = useAuth()
   const router = useRouter()
+
+  useEffect(() => {
+    if (typeof window === "undefined") return
+
+    const params = new URLSearchParams(window.location.search)
+    const redirect = params.get("redirect")
+    if (redirect?.startsWith("/")) {
+      setRedirectTo(redirect)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!authLoading && isAuthenticated) {
+      router.replace(redirectTo)
+    }
+  }, [authLoading, isAuthenticated, redirectTo, router])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -30,7 +47,7 @@ export default function AdminLogin() {
       const result = await login(email, password)
       if (result.success) {
         toast.success("Welcome back!")
-        router.push("/admin")
+        router.replace(redirectTo)
       } else {
         toast.error(result.error || "Invalid credentials. Please try again.")
       }
@@ -68,10 +85,10 @@ export default function AdminLogin() {
             
             <div className="space-y-2">
               <Label htmlFor="email">Email Address</Label>
-              <Input
-                id="email"
-                type="email"
-                placeholder="admin@qonnect.com"
+                <Input
+                  id="email"
+                  type="email"
+                  placeholder="name@example.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
