@@ -113,11 +113,10 @@ export default function AdminLogin() {
             </Button>
           </form>
           
-          {/* Subtle Helper Text */}
           <div className="mt-8 text-center">
-            <code className="text-xs text-muted-foreground bg-muted/50 px-3 py-1.5 rounded-md">
-              admin@qonnect.com / admin123
-            </code>
+            <p className="text-xs text-muted-foreground">
+              Authorized administrators only.
+            </p>
           </div>
         </div>
 
