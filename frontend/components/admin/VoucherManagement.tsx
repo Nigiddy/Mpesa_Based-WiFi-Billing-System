@@ -208,14 +208,20 @@ export default function VoucherManagement() {
       } else {
         toast.error(res.error || "Failed to load vouchers")
       }
-    } catch {
+    } catch (err) {
       toast.error("Failed to load vouchers")
     } finally {
       setLoading(false)
     }
   }, [page, statusFilter])
 
-  useEffect(() => { fetchVouchers() }, [fetchVouchers])
+  useEffect(() => {
+    let cancelled = false
+    fetchVouchers().catch(() => {
+      if (!cancelled) toast.error("Failed to load vouchers")
+    })
+    return () => { cancelled = true }
+  }, [fetchVouchers])
 
   // Summary counts
   const counts = {

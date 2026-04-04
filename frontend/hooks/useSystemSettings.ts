@@ -30,7 +30,11 @@ export const useSystemSettings = () => {
     }, [])
 
     useEffect(() => {
-        fetchSettings()
+        let cancelled = false
+        fetchSettings().catch(() => {
+            if (!cancelled) toast.error("Failed to load settings")
+        })
+        return () => { cancelled = true }
     }, [fetchSettings])
 
     const updateSetting = useCallback((key: keyof SystemSettings, value: any) => {

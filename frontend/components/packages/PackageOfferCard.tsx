@@ -6,7 +6,23 @@ import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/componen
 import { cn } from "@/lib/utils"
 import { motion } from "framer-motion"
 
-export const PackageOfferCard = ({ pkg, index = 0 }) => {
+interface PackageOffer {
+  id: string | number
+  name: string
+  description?: string
+  price: number | string
+  duration: string
+  features: string[]
+  popular?: boolean
+}
+
+interface PackageOfferCardProps {
+  pkg: PackageOffer
+  index?: number
+}
+
+export const PackageOfferCard = ({ pkg, index = 0 }: PackageOfferCardProps) => {
+
   const handleSelectPackage = () => {
     // Logic to handle package selection
     window.location.href = `/?package=${pkg.id}`

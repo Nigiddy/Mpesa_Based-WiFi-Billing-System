@@ -45,24 +45,25 @@ export const StatusBadge = React.forwardRef<
   const Icon = statusIconMap[status]
 
   return (
-    <Badge
-      ref={ref}
-      className={cn(
-        'flex items-center gap-1.5 border',
-        colors.bg,
-        colors.text,
-        colors.border,
-        'dark:' + colors.bg,
-        'dark:' + colors.text,
-        className
-      )}
-      variant={variant}
-    >
-      {showIcon && Icon && (
-        <Icon className={cn('h-3 w-3', colors.icon)} aria-hidden="true" />
-      )}
-      <span>{label}</span>
-    </Badge>
+    <div ref={ref}>
+      <Badge
+        className={cn(
+          'flex items-center gap-1.5 border',
+          colors.bg,
+          colors.text,
+          colors.border,
+          'dark:' + colors.bg,
+          'dark:' + colors.text,
+          className
+        )}
+        variant={variant}
+      >
+        {showIcon && Icon && (
+          <Icon className={cn('h-3 w-3', colors.icon)} aria-hidden="true" />
+        )}
+        <span>{label}</span>
+      </Badge>
+    </div>
   )
 })
 

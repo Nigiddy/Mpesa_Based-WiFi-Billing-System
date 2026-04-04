@@ -44,7 +44,7 @@ export const PremiumPackageCard = ({
       transition: {
         duration: 0.4,
         delay: index * 0.1,
-        ease: 'easeOut',
+        ease: 'easeOut' as const,
       },
     },
   }
@@ -111,7 +111,7 @@ export const PremiumPackageCard = ({
         )}
 
         {/* Glow effect for popular packages */}
-        {isPopular && isSelected && (
+        {pkg.popular && isSelected && (
           <div className="absolute inset-0 bg-gradient-to-br from-primary/10 to-secondary/10 animate-pulse pointer-events-none" />
         )}
 
@@ -237,7 +237,6 @@ export const PremiumPackageGrid = ({
             key={pkg.id}
             package={pkg}
             isSelected={selectedId === pkg.id}
-            isPopular={pkg.popular}
             onSelect={() => onSelect(pkg.id)}
             index={index}
             disabled={disabled || isLoading}

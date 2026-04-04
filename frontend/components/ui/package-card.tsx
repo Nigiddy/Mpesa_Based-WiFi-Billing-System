@@ -60,7 +60,7 @@ export const PackageCard = React.forwardRef<HTMLDivElement, PackageCardProps>(
         transition: {
           duration: 0.4,
           delay: index * 0.1,
-          ease: 'easeOut',
+          ease: 'easeOut' as const,
         },
       },
     }

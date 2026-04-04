@@ -1,5 +1,5 @@
 "use client"
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -8,7 +8,7 @@ import { DataStateWrapper } from "@/components/ui/data-state"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Search, Download, Eye, UserX, WifiOff, MoreHorizontal } from "lucide-react"
+import { Search, Download, Eye, UserX, WifiOff, MoreHorizontal, CheckCircle, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 import { apiClient, type User } from "@/lib/api"
 
@@ -19,12 +19,9 @@ const UserManagement = () => {
   const [statusFilter, setStatusFilter] = useState("all")
   const [currentPage, setCurrentPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
+  const [refreshKey, setRefreshKey] = useState(0)
 
-  useEffect(() => {
-    fetchUsers()
-  }, [searchTerm, statusFilter, currentPage])
-
-  const fetchUsers = async () => {
+  const fetchUsers = useCallback(async () => {
     setLoading(true)
     try {
       const response = await apiClient.getUsers({
@@ -47,7 +44,11 @@ const UserManagement = () => {
     } finally {
       setLoading(false)
     }
-  }
+  }, [searchTerm, statusFilter, currentPage])
+
+  useEffect(() => {
+    fetchUsers()
+  }, [fetchUsers, refreshKey])
 
   const handleUserAction = async (userId: number, action: string) => {
     try {
@@ -88,7 +89,7 @@ const UserManagement = () => {
           break
       }
       if (response?.success) {
-        fetchUsers() // Refresh the list
+        setRefreshKey((k) => k + 1) // Trigger re-fetch
       } else {
         throw new Error(response?.error || "Action failed")
       }

@@ -1,5 +1,5 @@
 "use client"
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -19,12 +19,9 @@ const PaymentManagement = () => {
   const [statusFilter, setStatusFilter] = useState("all")
   const [currentPage, setCurrentPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
+  const [refreshKey, setRefreshKey] = useState(0)
 
-  useEffect(() => {
-    fetchTransactions()
-  }, [searchTerm, statusFilter, currentPage])
-
-  const fetchTransactions = async () => {
+  const fetchTransactions = useCallback(async () => {
     setLoading(true)
     try {
       const response = await apiClient.getTransactions({
@@ -47,7 +44,11 @@ const PaymentManagement = () => {
     } finally {
       setLoading(false)
     }
-  }
+  }, [searchTerm, statusFilter, currentPage])
+
+  useEffect(() => {
+    fetchTransactions()
+  }, [fetchTransactions, refreshKey])
 
   const handleRefund = async (transactionId: string) => {
     try {
@@ -57,7 +58,7 @@ const PaymentManagement = () => {
         toast.success("Refund processed successfully", {
           description: `Ksh ${transaction?.amount} refunded to ${transaction?.phone}`,
         })
-        fetchTransactions() // Refresh the list
+        setRefreshKey((k) => k + 1) // Trigger re-fetch
       } else {
         throw new Error(response.error || "Refund failed")
       }

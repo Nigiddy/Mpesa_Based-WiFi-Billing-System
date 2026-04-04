@@ -6,7 +6,7 @@ import { RequireAdmin } from "@/components/admin/RequireAdmin"
 export default function AdminLayout({
   children,
 }: {
-  children: React.Node
+  children: React.ReactNode
 }) {
   return (
     <AuthProvider>

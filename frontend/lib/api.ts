@@ -120,6 +120,19 @@ class ApiClient {
         ...options,
       })
 
+      // ✅ Handle 401 Unauthorized - auto logout
+      if (response.status === 401) {
+        this.csrfToken = null
+        // Dispatch global unauthorized event
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('auth:unauthorized', { detail: { redirectTo: '/admin/login' } }))
+        }
+        return {
+          success: false,
+          error: 'Session expired. Please login again.',
+        }
+      }
+
       const data = await response.json()
 
       if (!response.ok) {
@@ -154,7 +167,7 @@ class ApiClient {
     return this.csrfToken
   }
 
-  setCsrfToken(token: string): void {
+  setCsrfToken(token: string | null): void {
     this.csrfToken = token
   }
 
@@ -399,7 +412,8 @@ export class WebSocketClient {
   private reconnectInterval = 5000
 
   connect(transactionId?: string) {
-    const wsUrl = `${API_BASE_URL.replace("http", "ws")}/ws${transactionId ? `/payments/${transactionId}` : ""}`
+    const baseUrl = API_BASE_URL ?? ''
+    const wsUrl = `${baseUrl.replace("http", "ws")}/ws${transactionId ? `/payments/${transactionId}` : ""}`
 
     try {
       this.ws = new WebSocket(wsUrl)
