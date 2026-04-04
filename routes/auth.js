@@ -42,7 +42,11 @@ router.post("/admin/login", authLimiter, async (req, res) => {
         }
 
         // Generate JWT token
-        const token = jwt.sign({ id: admin.id, email: admin.email }, SECRET_KEY, { expiresIn: "1h" });
+        const token = jwt.sign(
+            { id: admin.id, email: admin.email, role: "admin" },
+            SECRET_KEY,
+            { expiresIn: "1h" }
+        );
 
         // Audit log: admin login
         logAudit("admin_login", { email }, admin.id);
@@ -54,7 +58,11 @@ router.post("/admin/login", authLimiter, async (req, res) => {
             maxAge: 60 * 60 * 1000 // 1 hour
         });
         // Send admin info in response
-        res.json({ success: true, message: "Login successful", admin: { id: admin.id, email: admin.email } });
+        res.json({
+            success: true,
+            message: "Login successful",
+            data: { admin: { id: admin.id, email: admin.email } }
+        });
     } catch (error) {
         console.error("Login Error:", error);
         res.status(500).json({ error: "Internal Server Error" });
@@ -72,6 +80,9 @@ router.get("/admin/me", async (req, res) => {
 
         try {
             const decoded = jwt.verify(token, SECRET_KEY);
+            if (decoded.role !== "admin") {
+                return res.status(401).json({ success: false, error: "Invalid or expired token" });
+            }
             const admin = await prisma.admin.findUnique({ 
                 where: { id: decoded.id },
                 select: { id: true, email: true } // Don't return password
@@ -81,7 +92,7 @@ router.get("/admin/me", async (req, res) => {
                 return res.status(401).json({ success: false, error: "Admin not found" });
             }
 
-            res.json({ success: true, admin });
+            res.json({ success: true, data: { admin } });
         } catch (tokenError) {
             return res.status(401).json({ success: false, error: "Invalid or expired token" });
         }

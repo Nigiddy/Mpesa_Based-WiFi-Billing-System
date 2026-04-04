@@ -10,7 +10,7 @@ const { logAudit } = require("../utils/auditLogger");
 router.get("/admin/csrf-token", authMiddleware, attachCSRFToken, (req, res) => {
   res.json({ 
     success: true, 
-    token: req.csrfToken(),
+    data: { token: req.csrfToken() },
     message: "CSRF token generated. Include in X-CSRF-Token header for mutations."
   });
 });
@@ -96,7 +96,7 @@ router.get("/users", authMiddleware, async (req, res) => {
 router.post("/users/:id/block", authMiddleware, csrfProtection, async (req, res) => {
   try {
     const { id } = req.params;
-    const adminId = req.user?.id;
+    const adminId = req.admin?.id;
 
     // Update user status to BLOCKED
     await prisma.user.update({
@@ -121,7 +121,7 @@ router.post("/users/:id/block", authMiddleware, csrfProtection, async (req, res)
 router.post("/users/:id/unblock", authMiddleware, csrfProtection, async (req, res) => {
   try {
     const { id } = req.params;
-    const adminId = req.user?.id;
+    const adminId = req.admin?.id;
 
     // Update user status back to ACTIVE
     await prisma.user.update({
@@ -146,7 +146,7 @@ router.post("/users/:id/unblock", authMiddleware, csrfProtection, async (req, re
 router.post("/users/:id/disconnect", authMiddleware, csrfProtection, async (req, res) => {
   try {
     const { id } = req.params;
-    const adminId = req.user?.id;
+    const adminId = req.admin?.id;
     const payment = await prisma.payment.findUnique({
       where: { id: parseInt(id) },
       select: { macAddress: true }
@@ -177,7 +177,7 @@ router.post("/users/:id/disconnect", authMiddleware, csrfProtection, async (req,
 router.delete("/users/:id", authMiddleware, csrfProtection, async (req, res) => {
   try {
     const { id } = req.params;
-    const adminId = req.user?.id;
+    const adminId = req.admin?.id;
 
     // Mark user as inactive instead of hard delete (preserves audit trail)
     await prisma.user.update({
@@ -258,7 +258,7 @@ router.get("/transactions", authMiddleware, async (req, res) => {
 router.post("/transactions/:transactionId/refund", authMiddleware, csrfProtection, async (req, res) => {
   try {
     const { transactionId } = req.params;
-    const adminId = req.user?.id;
+    const adminId = req.admin?.id;
 
     // Log refund attempt
     logAudit('ADMIN_REQUEST_REFUND', { 
@@ -304,7 +304,7 @@ router.get("/network/devices", authMiddleware, async (req, res) => {
 
 router.post("/network/disconnect-all", authMiddleware, csrfProtection, async (req, res) => {
   try {
-    const adminId = req.user?.id;
+    const adminId = req.admin?.id;
     const resp = await disconnectAllUsers();
     
     // Log admin action
