@@ -98,7 +98,11 @@ export interface VoucherStatusResult {
 class ApiClient {
   private csrfToken: string | null = null
 
-  private async request<T>(endpoint: string, options: RequestInit = {}): Promise<ApiResponse<T>> {
+  private async request<T>(
+    endpoint: string,
+    options: RequestInit = {},
+    config: { onUnauthorized?: "event" | "silent" } = {},
+  ): Promise<ApiResponse<T>> {
     try {
       // Add CSRF token to mutation requests (POST, PUT, DELETE, PATCH)
       const headers = {
@@ -120,16 +124,21 @@ class ApiClient {
         ...options,
       })
 
-      // ✅ Handle 401 Unauthorized - auto logout
+      const onUnauthorized = config.onUnauthorized ?? "event"
+
+      // ✅ Handle 401 Unauthorized - auto logout when appropriate
       if (response.status === 401) {
         this.csrfToken = null
-        // Dispatch global unauthorized event
-        if (typeof window !== 'undefined') {
+        const data = await response.json().catch(() => null)
+        const errorMessage =
+          data?.message || data?.error || "Session expired. Please login again."
+
+        if (onUnauthorized === "event" && typeof window !== 'undefined') {
           window.dispatchEvent(new CustomEvent('auth:unauthorized', { detail: { redirectTo: '/admin/login' } }))
         }
         return {
           success: false,
-          error: 'Session expired. Please login again.',
+          error: errorMessage,
         }
       }
 
@@ -173,10 +182,14 @@ class ApiClient {
 
   // Auth APIs
   async login(email: string, password: string): Promise<ApiResponse<{ admin: any }>> {
-    return this.request("/auth/admin/login", {
-      method: "POST",
-      body: JSON.stringify({ email, password }),
-    })
+    return this.request(
+      "/auth/admin/login",
+      {
+        method: "POST",
+        body: JSON.stringify({ email, password }),
+      },
+      { onUnauthorized: "silent" },
+    )
   }
 
   async logout(): Promise<ApiResponse> {
@@ -186,7 +199,7 @@ class ApiClient {
   }
 
   async checkAuthStatus(): Promise<ApiResponse<{ admin: any }>> {
-    return this.request("/auth/admin/me")
+    return this.request("/auth/admin/me", {}, { onUnauthorized: "silent" })
   }
 
   async checkSessionStatus(macAddress: string): Promise<ApiResponse<{ hasActiveSession: boolean; expiresAt?: string }>> {
