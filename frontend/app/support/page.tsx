@@ -44,17 +44,17 @@ const faqs = [
 export default function SupportPage() {
   useDynamicTitle("Support - Qonnect")
   
-  const [formData, setFormData] = useState({ name: "", email: "", message: "" })
+  const [formData, setFormData] = useState({ name: "", email: "", phone: "", subject: "", message: "" })
   const [isSubmitting, setIsSubmitting] = useState(false)
 
-  const handleInputChange = (e) => {
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { id, value } = e.target
     setFormData((prev) => ({ ...prev, [id]: value }))
   }
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!formData.name || !formData.email || !formData.message) {
+    if (!formData.name || !formData.email || !formData.phone || !formData.subject || !formData.message) {
       toast.error("Please fill in all fields.")
       return
     }
@@ -66,12 +66,12 @@ export default function SupportPage() {
       const response = await apiClient.submitSupportRequest(formData)
       if (response.success) {
         toast.success("Message sent! We'll get back to you soon.")
-        setFormData({ name: "", email: "", message: "" })
+        setFormData({ name: "", email: "", phone: "", subject: "", message: "" })
       } else {
         throw new Error(response.error || "An unknown error occurred.")
       }
     } catch (error) {
-      toast.error("Failed to send message.", { description: error.message })
+      toast.error("Failed to send message.", { description: error instanceof Error ? error.message : "An unexpected error occurred" })
     } finally {
       setIsSubmitting(false)
     }

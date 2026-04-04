@@ -1,19 +1,19 @@
-import { Shield, Users, Globe, Wifi } from "lucide-react"
+import { Shield, Users, Wifi } from "lucide-react"
 import { motion } from "framer-motion"
 
 const trustItems = [
   {
-    icon: <Shield className="h-6 w-6 text-green-500" />,
+    icon: <Shield className="h-6 w-6 text-success" />,
     title: "Secure Payments",
     description: "All transactions are encrypted and protected.",
   },
   {
-    icon: <Users className="h-6 w-6 text-blue-500" />,
+    icon: <Users className="h-6 w-6 text-primary" />,
     title: "Trusted by Many",
     description: "Join our growing community of happy users.",
   },
   {
-    icon: <Wifi className="h-6 w-6 text-purple-500" />,
+    icon: <Wifi className="h-6 w-6 text-secondary" />,
     title: "High-Speed Access",
     description: "Blazing-fast internet for all your needs.",
   },

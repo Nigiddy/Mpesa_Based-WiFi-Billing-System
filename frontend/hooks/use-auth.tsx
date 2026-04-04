@@ -29,11 +29,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const checkAuth = async () => {
       try {
         const response = await apiClient.checkAuthStatus()
-        if (response.success && response.admin) {
-          setAuthState({ isAuthenticated: true, admin: response.admin, loading: false })
+        if (response.success && response.data?.admin) {
+          setAuthState({ isAuthenticated: true, admin: response.data.admin, loading: false })
           
           // ✅ Fetch CSRF token for admin mutations
-          console.log("📛 Fetching CSRF token for admin dashboard...")
           await apiClient.fetchCsrfToken()
         } else {
           setAuthState({ isAuthenticated: false, admin: null, loading: false })
@@ -45,14 +44,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     checkAuth()
   }, [])
 
+  // ✅ Listen for 401 unauthorized events and auto-logout
+  useEffect(() => {
+    const handleUnauthorized = (event: Event) => {
+      setAuthState({ isAuthenticated: false, admin: null, loading: false })
+      apiClient.setCsrfToken(null)
+    }
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('auth:unauthorized', handleUnauthorized)
+      return () => window.removeEventListener('auth:unauthorized', handleUnauthorized)
+    }
+  }, [])
+
   const login = async (email: string, password: string) => {
     try {
       const response = await apiClient.login(email, password)
-      if (response.success && response.admin) {
-        setAuthState({ isAuthenticated: true, admin: response.admin, loading: false })
+      if (response.success && response.data?.admin) {
+        setAuthState({ isAuthenticated: true, admin: response.data.admin, loading: false })
         
         // ✅ Fetch CSRF token after login
-        console.log("📛 Fetching CSRF token after login...")
         await apiClient.fetchCsrfToken()
         
         return { success: true }

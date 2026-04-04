@@ -4,7 +4,8 @@ import { useState, useEffect, useCallback } from "react"
 import { Ticket, Plus, Download, RefreshCw, Copy, Check, Filter } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
+import { StatusBadge } from "@/components/ui/status-badge"
+import { DataStateWrapper } from "@/components/ui/data-state"
 import { apiClient, type Voucher } from "@/lib/api"
 import { toast } from "sonner"
 
@@ -18,13 +19,6 @@ const PLAN_OPTIONS = [
   { key: "12Hrs", label: "12 Hours", price: "KSh 20" },
   { key: "24Hrs", label: "24 Hours", price: "KSh 30" },
 ]
-
-const STATUS_BADGE: Record<string, { label: string; className: string }> = {
-  unused:     { label: "Unused",     className: "bg-blue-500/10 text-blue-400 border-blue-500/20" },
-  active:     { label: "Active",     className: "bg-green-500/10 text-green-400 border-green-500/20" },
-  fully_used: { label: "Used",       className: "bg-zinc-500/10 text-zinc-400 border-zinc-500/20" },
-  expired:    { label: "Expired",    className: "bg-red-500/10 text-red-400 border-red-500/20" },
-}
 
 // ─── Generate Dialog ──────────────────────────────────────────────────────────
 
@@ -154,7 +148,7 @@ function CopyButton({ text }: { text: string }) {
       title="Copy code"
       className="ml-2 text-muted-foreground hover:text-foreground transition-colors"
     >
-      {copied ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
+      {copied ? <Check className="w-3.5 h-3.5 text-success" /> : <Copy className="w-3.5 h-3.5" />}
     </button>
   )
 }
@@ -162,7 +156,6 @@ function CopyButton({ text }: { text: string }) {
 // ─── Voucher Row ──────────────────────────────────────────────────────────────
 
 function VoucherRow({ v }: { v: Voucher }) {
-  const badge = STATUS_BADGE[v.status] ?? STATUS_BADGE.unused
   const expiryLabel = v.expiresAt
     ? new Date(v.expiresAt).toLocaleDateString()
     : "Never"
@@ -178,9 +171,7 @@ function VoucherRow({ v }: { v: Voucher }) {
         {v.currentUses} / {v.maxUses}
       </td>
       <td className="px-4 py-3">
-        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${badge.className}`}>
-          {badge.label}
-        </span>
+        <StatusBadge status={v.status} />
       </td>
       <td className="px-4 py-3 text-muted-foreground">{expiryLabel}</td>
       <td className="px-4 py-3 text-muted-foreground">
@@ -217,14 +208,20 @@ export default function VoucherManagement() {
       } else {
         toast.error(res.error || "Failed to load vouchers")
       }
-    } catch {
+    } catch (err) {
       toast.error("Failed to load vouchers")
     } finally {
       setLoading(false)
     }
   }, [page, statusFilter])
 
-  useEffect(() => { fetchVouchers() }, [fetchVouchers])
+  useEffect(() => {
+    let cancelled = false
+    fetchVouchers().catch(() => {
+      if (!cancelled) toast.error("Failed to load vouchers")
+    })
+    return () => { cancelled = true }
+  }, [fetchVouchers])
 
   // Summary counts
   const counts = {
@@ -270,10 +267,10 @@ export default function VoucherManagement() {
       {/* Summary cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[
-          { label: "Unused",  value: counts.unused,     color: "text-blue-400" },
-          { label: "Active",  value: counts.active,     color: "text-green-400" },
-          { label: "Used",    value: counts.fully_used, color: "text-zinc-400" },
-          { label: "Expired", value: counts.expired,    color: "text-red-400" },
+          { label: "Unused",  value: counts.unused,     color: "text-primary" },
+          { label: "Active",  value: counts.active,     color: "text-success" },
+          { label: "Used",    value: counts.fully_used, color: "text-muted-foreground" },
+          { label: "Expired", value: counts.expired,    color: "text-destructive" },
         ].map((s) => (
           <div key={s.label} className="bg-card border border-border/50 rounded-xl p-4">
             <p className="text-xs text-muted-foreground mb-1">{s.label}</p>

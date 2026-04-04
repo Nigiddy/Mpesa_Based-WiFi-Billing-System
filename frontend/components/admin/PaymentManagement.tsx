@@ -1,13 +1,14 @@
 "use client"
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
-import { Badge } from "@/components/ui/badge"
+import { StatusBadge } from "@/components/ui/status-badge"
+import { DataStateWrapper } from "@/components/ui/data-state"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Search, Download, Eye, Trash2, CheckCircle, XCircle, Clock, RefreshCw, MoreHorizontal } from "lucide-react"
+import { Search, Download, Eye, RefreshCw, MoreHorizontal } from "lucide-react"
 import { toast } from "sonner"
 import { apiClient, type Transaction } from "@/lib/api"
 
@@ -18,12 +19,9 @@ const PaymentManagement = () => {
   const [statusFilter, setStatusFilter] = useState("all")
   const [currentPage, setCurrentPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
+  const [refreshKey, setRefreshKey] = useState(0)
 
-  useEffect(() => {
-    fetchTransactions()
-  }, [searchTerm, statusFilter, currentPage])
-
-  const fetchTransactions = async () => {
+  const fetchTransactions = useCallback(async () => {
     setLoading(true)
     try {
       const response = await apiClient.getTransactions({
@@ -46,24 +44,11 @@ const PaymentManagement = () => {
     } finally {
       setLoading(false)
     }
-  }
+  }, [searchTerm, statusFilter, currentPage])
 
-  const getStatusBadge = (status: string) => {
-    const statusConfig = {
-      completed: { color: "bg-green-500/10 text-green-600 dark:text-green-400", icon: CheckCircle },
-      failed: { color: "bg-red-500/10 text-red-600 dark:text-red-400", icon: XCircle },
-      pending: { color: "bg-yellow-500/10 text-yellow-600 dark:text-yellow-400", icon: Clock },
-      refunded: { color: "bg-blue-500/10 text-blue-600 dark:text-blue-400", icon: RefreshCw },
-    }
-    const config = statusConfig[status] || statusConfig.pending
-    const Icon = config.icon
-    return (
-      <Badge className={`${config.color} border-0 flex items-center gap-1`}>
-        <Icon className="h-3 w-3" />
-        {status.charAt(0).toUpperCase() + status.slice(1)}
-      </Badge>
-    )
-  }
+  useEffect(() => {
+    fetchTransactions()
+  }, [fetchTransactions, refreshKey])
 
   const handleRefund = async (transactionId: string) => {
     try {
@@ -73,7 +58,7 @@ const PaymentManagement = () => {
         toast.success("Refund processed successfully", {
           description: `Ksh ${transaction?.amount} refunded to ${transaction?.phone}`,
         })
-        fetchTransactions() // Refresh the list
+        setRefreshKey((k) => k + 1) // Trigger re-fetch
       } else {
         throw new Error(response.error || "Refund failed")
       }
@@ -114,7 +99,7 @@ const PaymentManagement = () => {
             toast.info("Exporting transaction data...", { duration: 2000 })
             // TODO: Implement export functionality
           }}
-          className="bg-blue-600 hover:bg-blue-700 text-white"
+          className="bg-primary hover:bg-primary/90 text-primary-foreground"
         >
           <Download className="h-4 w-4 mr-2" />
           Export
@@ -152,7 +137,7 @@ const PaymentManagement = () => {
                       <TableCell className="text-slate-600 dark:text-slate-400">{transaction.phone}</TableCell>
                       <TableCell className="text-slate-600 dark:text-slate-400">{transaction.package}</TableCell>
                       <TableCell className="font-medium text-slate-900 dark:text-white">Ksh {transaction.amount}</TableCell>
-                      <TableCell>{getStatusBadge(transaction.status)}</TableCell>
+                      <TableCell>{<StatusBadge status={transaction.status} />}</TableCell>
                       <TableCell className="font-mono text-sm text-slate-600 dark:text-slate-400">{transaction.mpesaRef}</TableCell>
                       <TableCell className="text-slate-600 dark:text-slate-400">{transaction.timestamp}</TableCell>
                       <TableCell>

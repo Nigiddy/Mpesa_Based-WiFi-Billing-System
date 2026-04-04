@@ -1,5 +1,3 @@
-"use client"
-
 import { AuthProvider } from "@/hooks/use-auth"
 
 export default function LoginLayout({

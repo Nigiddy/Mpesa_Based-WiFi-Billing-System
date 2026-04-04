@@ -14,7 +14,7 @@ export const CtaSection = () => {
       
       {/* Animated background elements */}
       <div className="absolute top-0 left-1/4 w-64 h-64 bg-primary/5 rounded-full blur-3xl animate-pulse" />
-      <div className="absolute bottom-0 right-1/4 w-64 h-64 bg-blue-500/5 rounded-full blur-3xl animate-pulse delay-700" />
+      <div className="absolute bottom-0 right-1/4 w-64 h-64 bg-secondary/5 rounded-full blur-3xl animate-pulse delay-700" />
 
       <div className="relative max-w-4xl mx-auto px-6 py-16 lg:py-20">
         <motion.div
@@ -103,15 +103,15 @@ export const CtaSection = () => {
             className="flex flex-wrap justify-center gap-6 lg:gap-8 mt-12 pt-8 border-t border-border/50"
           >
             <div className="flex items-center gap-2 text-muted-foreground">
-              <Zap className="w-5 h-5 text-green-600" />
+              <Zap className="w-5 h-5 text-success" />
               <span className="text-sm font-medium">Instant Activation</span>
             </div>
             <div className="flex items-center gap-2 text-muted-foreground">
-              <Smartphone className="w-5 h-5 text-blue-600" />
+              <Smartphone className="w-5 h-5 text-primary" />
               <span className="text-sm font-medium">M-Pesa Payment</span>
             </div>
             <div className="flex items-center gap-2 text-muted-foreground">
-              <svg className="w-5 h-5 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <svg className="w-5 h-5 text-secondary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
               <span className="text-sm font-medium">24/7 Support</span>

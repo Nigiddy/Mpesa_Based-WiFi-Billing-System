@@ -37,7 +37,6 @@ export function usePayment() {
       apiClient.checkSessionStatus(macFromUrl).then(response => {
         if (response.success && response.data?.hasActiveSession) {
           setHasActiveSession(true)
-          console.log("User has active session, expires at:", response.data.expiresAt)
           toast.info("You already have an active session.", {
             description: `It expires at ${new Date(response.data.expiresAt!).toLocaleString()}`,
           })
@@ -97,48 +96,75 @@ export function usePayment() {
     }
   }
 
-  const pollPaymentStatus = async (txnId: string) => {
-    const interval = setInterval(async () => {
-      try {
-        const response = await apiClient.checkPaymentStatus(txnId)
-        if (response.success && response.data?.status === "completed") {
-          clearInterval(interval)
-          setStatus("completed")
-          setIsLoading(false)
-          setPaymentData(response.data)  // PaymentResponse shape: { status, mpesaRef, expiresAt }
-          setShowSuccessModal(true)
-          toast.success("Payment successful!", {
-            id: "payment-toast",
-            description: `WiFi access granted until ${response.data.expiresAt ? new Date(response.data.expiresAt).toLocaleTimeString() : 'session expires'}. Redirecting…`,
-          })
-          // Redirect to the user’s intended destination after a short delay
-          // so they can see the success toast before being navigated away.
-          setTimeout(() => { window.location.href = linkOrig }, 3000)
-        } else if (response.success && response.data?.status === "failed") {
-          clearInterval(interval)
-          setStatus("failed")
-          setIsLoading(false)
-          toast.error("Payment Failed", {
-            id: "payment-toast",
-            description: "Your payment was declined or cancelled. Please try again.",
-          })
-        }
-        // If status is still pending, the loop continues
-      } catch (error) {
-        clearInterval(interval)
-        setStatus("failed")
-        setIsLoading(false)
-        toast.error("Polling Error", {
-          id: "payment-toast",
-          description: "Could not confirm payment status.",
-        })
-      }
-    }, 5000) // Poll every 5 seconds
+  const pollPaymentStatus = (txnId: string) => {
+    let isMounted = true
+    let interval: NodeJS.Timeout | null = null
+    let timeoutId: NodeJS.Timeout | null = null
 
-    // Timeout after 2 minutes
-    setTimeout(() => {
-      if (status === "pending") {
+    const poll = () => {
+      interval = setInterval(async () => {
+        if (!isMounted) return
+
+        try {
+          const response = await apiClient.checkPaymentStatus(txnId)
+          
+          if (!isMounted || !interval) return
+
+          if (response.success && response.data?.status === "completed") {
+            if (interval) clearInterval(interval)
+            interval = null
+            if (timeoutId) clearTimeout(timeoutId)
+            
+            if (isMounted) {
+              setStatus("completed")
+              setIsLoading(false)
+              setPaymentData(response.data)
+              setShowSuccessModal(true)
+              toast.success("Payment successful!", {
+                id: "payment-toast",
+                description: `WiFi access granted until ${response.data.expiresAt ? new Date(response.data.expiresAt).toLocaleTimeString() : 'session expires'}. Redirecting…`,
+              })
+              setTimeout(() => { window.location.href = linkOrig }, 3000)
+            }
+          } else if (response.success && response.data?.status === "failed") {
+            if (interval) clearInterval(interval)
+            interval = null
+            if (timeoutId) clearTimeout(timeoutId)
+            
+            if (isMounted) {
+              setStatus("failed")
+              setIsLoading(false)
+              toast.error("Payment Failed", {
+                id: "payment-toast",
+                description: "Your payment was declined or cancelled. Please try again.",
+              })
+            }
+          }
+        } catch (error) {
+          if (!isMounted) return
+          if (interval) clearInterval(interval)
+          if (timeoutId) clearTimeout(timeoutId)
+          interval = null
+
+          if (isMounted) {
+            setStatus("failed")
+            setIsLoading(false)
+            toast.error("Polling Error", {
+              id: "payment-toast",
+              description: "Could not confirm payment status.",
+            })
+          }
+        }
+      }, 5000)
+    }
+
+    poll()
+
+    timeoutId = setTimeout(() => {
+      if (isMounted && interval) {
         clearInterval(interval)
+        interval = null
+        
         setStatus("failed")
         setIsLoading(false)
         toast.error("Payment Timeout", {
@@ -147,6 +173,18 @@ export function usePayment() {
         })
       }
     }, 120000)
+
+    return () => {
+      isMounted = false
+      if (interval) {
+        clearInterval(interval)
+        interval = null
+      }
+      if (timeoutId) {
+        clearTimeout(timeoutId)
+        timeoutId = null
+      }
+    }
   }
 
   const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {

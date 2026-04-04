@@ -22,6 +22,20 @@ export function RequireAdmin({ children }: { children: React.ReactNode }) {
     }
   }, [isAuthenticated, loading, router, isLoginPage])
 
+  // ✅ Listen for 401 unauthorized events and redirect to login
+  useEffect(() => {
+    const handleUnauthorized = (event: Event) => {
+      if (!isLoginPage) {
+        router.push("/admin/login")
+      }
+    }
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('auth:unauthorized', handleUnauthorized)
+      return () => window.removeEventListener('auth:unauthorized', handleUnauthorized)
+    }
+  }, [router, isLoginPage])
+
   if (loading) {
     // Show loading spinner or nothing while checking auth
     return isLoginPage ? <>{children}</> : null

@@ -1,13 +1,14 @@
 "use client"
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
-import { Badge } from "@/components/ui/badge"
+import { StatusBadge } from "@/components/ui/status-badge"
+import { DataStateWrapper } from "@/components/ui/data-state"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Search, Download, Eye, Trash2, CheckCircle, UserX, WifiOff, MoreHorizontal } from "lucide-react"
+import { Search, Download, Eye, UserX, WifiOff, MoreHorizontal, CheckCircle, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 import { apiClient, type User } from "@/lib/api"
 
@@ -18,12 +19,9 @@ const UserManagement = () => {
   const [statusFilter, setStatusFilter] = useState("all")
   const [currentPage, setCurrentPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
+  const [refreshKey, setRefreshKey] = useState(0)
 
-  useEffect(() => {
-    fetchUsers()
-  }, [searchTerm, statusFilter, currentPage])
-
-  const fetchUsers = async () => {
+  const fetchUsers = useCallback(async () => {
     setLoading(true)
     try {
       const response = await apiClient.getUsers({
@@ -46,18 +44,11 @@ const UserManagement = () => {
     } finally {
       setLoading(false)
     }
-  }
+  }, [searchTerm, statusFilter, currentPage])
 
-  const getStatusBadge = (status: string) => {
-    const statusConfig = {
-      active: { color: "bg-green-500/10 text-green-600 dark:text-green-400", label: "Active" },
-      expired: { color: "bg-yellow-500/10 text-yellow-600 dark:text-yellow-400", label: "Expired" },
-      blocked: { color: "bg-red-500/10 text-red-600 dark:text-red-400", label: "Blocked" },
-    } as const
-    type StatusKey = keyof typeof statusConfig
-    const config = statusConfig[status as StatusKey] || statusConfig.expired
-    return <Badge className={`${config.color} border-0`}>{config.label}</Badge>
-  }
+  useEffect(() => {
+    fetchUsers()
+  }, [fetchUsers, refreshKey])
 
   const handleUserAction = async (userId: number, action: string) => {
     try {
@@ -98,7 +89,7 @@ const UserManagement = () => {
           break
       }
       if (response?.success) {
-        fetchUsers() // Refresh the list
+        setRefreshKey((k) => k + 1) // Trigger re-fetch
       } else {
         throw new Error(response?.error || "Action failed")
       }
@@ -138,7 +129,7 @@ const UserManagement = () => {
             toast.info("Exporting user data...", { duration: 2000 })
             // TODO: Implement export functionality
           }}
-          className="bg-blue-600 hover:bg-blue-700 text-white"
+          className="bg-primary hover:bg-primary/90 text-primary-foreground"
         >
           <Download className="h-4 w-4 mr-2" />
           Export
@@ -173,7 +164,7 @@ const UserManagement = () => {
                     <TableRow key={user.id}>
                       <TableCell className="font-medium text-slate-900 dark:text-white">{user.phone}</TableCell>
                       <TableCell className="font-mono text-sm text-slate-600 dark:text-slate-400">{user.macAddress}</TableCell>
-                      <TableCell>{getStatusBadge(user.status)}</TableCell>
+                      <TableCell>{<StatusBadge status={user.status} />}</TableCell>
                       <TableCell className="text-slate-600 dark:text-slate-400">{user.currentPackage || "None"}</TableCell>
                       <TableCell className="text-slate-900 dark:text-white font-medium">Ksh {user.totalSpent}</TableCell>
                       <TableCell className="text-slate-600 dark:text-slate-400">{user.lastSeen}</TableCell>
@@ -201,7 +192,7 @@ const UserManagement = () => {
                               <DropdownMenuItem onClick={() => handleUserAction(user.id, "block")}> <UserX className="h-4 w-4 mr-2" /> Block User </DropdownMenuItem>
                             )}
                             <DropdownMenuItem
-                              className="text-red-600"
+                              className="text-destructive"
                               onClick={() => {
                                 if (confirm("Are you sure you want to delete this user? This action cannot be undone.")) {
                                   handleUserAction(user.id, "delete")

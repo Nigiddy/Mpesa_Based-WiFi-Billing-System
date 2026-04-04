@@ -302,7 +302,7 @@ export const CountdownTimer = ({ expiresIn, onExpire }: { expiresIn: number; onE
  */
 export const HelpText = ({ text, icon = '💡' }: { text: string; icon?: string }) => {
   return (
-    <div className="flex items-start gap-2 p-3 rounded-lg bg-blue-500/5 border border-blue-500/20">
+    <div className="flex items-start gap-2 p-3 rounded-lg bg-primary/5 border border-primary/20">
       <span className="text-lg">{icon}</span>
       <p className="text-sm text-muted-foreground">{text}</p>
     </div>

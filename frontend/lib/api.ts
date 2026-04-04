@@ -1,5 +1,8 @@
 // API configuration optimized for Node.js/Express backend
-export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000"
+if (!process.env.NEXT_PUBLIC_API_URL) {
+  
+}
+export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL
 
 export interface ApiResponse<T = any> {
   success: boolean
@@ -117,6 +120,19 @@ class ApiClient {
         ...options,
       })
 
+      // ✅ Handle 401 Unauthorized - auto logout
+      if (response.status === 401) {
+        this.csrfToken = null
+        // Dispatch global unauthorized event
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('auth:unauthorized', { detail: { redirectTo: '/admin/login' } }))
+        }
+        return {
+          success: false,
+          error: 'Session expired. Please login again.',
+        }
+      }
+
       const data = await response.json()
 
       if (!response.ok) {
@@ -139,7 +155,6 @@ class ApiClient {
       const response = await this.request<{ token: string }>("/api/admin/csrf-token")
       if (response.success && response.data?.token) {
         this.csrfToken = response.data.token
-        console.log("✅ CSRF token fetched successfully")
         return this.csrfToken
       }
     } catch (error) {
@@ -152,7 +167,7 @@ class ApiClient {
     return this.csrfToken
   }
 
-  setCsrfToken(token: string): void {
+  setCsrfToken(token: string | null): void {
     this.csrfToken = token
   }
 
@@ -397,13 +412,13 @@ export class WebSocketClient {
   private reconnectInterval = 5000
 
   connect(transactionId?: string) {
-    const wsUrl = `${API_BASE_URL.replace("http", "ws")}/ws${transactionId ? `/payments/${transactionId}` : ""}`
+    const baseUrl = API_BASE_URL ?? ''
+    const wsUrl = `${baseUrl.replace("http", "ws")}/ws${transactionId ? `/payments/${transactionId}` : ""}`
 
     try {
       this.ws = new WebSocket(wsUrl)
 
       this.ws.onopen = () => {
-        console.log("WebSocket connected")
         this.reconnectAttempts = 0
       }
 
@@ -413,7 +428,6 @@ export class WebSocketClient {
       }
 
       this.ws.onclose = () => {
-        console.log("WebSocket disconnected")
         this.reconnect()
       }
 
@@ -452,7 +466,6 @@ export class WebSocketClient {
     if (this.reconnectAttempts < this.maxReconnectAttempts) {
       this.reconnectAttempts++
       setTimeout(() => {
-        console.log(`Attempting to reconnect WebSocket (${this.reconnectAttempts}/${this.maxReconnectAttempts})`)
         this.connect()
       }, this.reconnectInterval)
     }

@@ -9,7 +9,7 @@ export const HeroSection = () => {
       {/* Background decoration */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className="absolute -top-40 -right-40 w-80 h-80 bg-primary/5 rounded-full blur-3xl" />
-        <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-blue-500/5 rounded-full blur-3xl" />
+        <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-secondary/5 rounded-full blur-3xl" />
       </div>
 
       <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -54,22 +54,22 @@ export const HeroSection = () => {
           className="flex flex-wrap justify-center gap-6 lg:gap-8 mt-12"
         >
           <div className="flex items-center gap-2 text-muted-foreground">
-            <div className="p-2 rounded-lg bg-green-500/10">
-              <Wifi className="w-5 h-5 text-green-600" />
+            <div className="p-2 rounded-lg bg-success/10">
+              <Wifi className="w-5 h-5 text-success" />
             </div>
             <span className="text-sm font-medium">High-Speed Connection</span>
           </div>
           
           <div className="flex items-center gap-2 text-muted-foreground">
-            <div className="p-2 rounded-lg bg-blue-500/10">
-              <Zap className="w-5 h-5 text-blue-600" />
+            <div className="p-2 rounded-lg bg-primary/10">
+              <Zap className="w-5 h-5 text-primary" />
             </div>
             <span className="text-sm font-medium">Instant Activation</span>
           </div>
           
           <div className="flex items-center gap-2 text-muted-foreground">
-            <div className="p-2 rounded-lg bg-purple-500/10">
-              <Shield className="w-5 h-5 text-purple-600" />
+            <div className="p-2 rounded-lg bg-secondary/10">
+              <Shield className="w-5 h-5 text-secondary" />
             </div>
             <span className="text-sm font-medium">Secure M-Pesa Payment</span>
           </div>
