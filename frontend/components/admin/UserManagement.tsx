@@ -3,11 +3,12 @@ import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
-import { Badge } from "@/components/ui/badge"
+import { StatusBadge } from "@/components/ui/status-badge"
+import { DataStateWrapper } from "@/components/ui/data-state"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Search, Download, Eye, Trash2, CheckCircle, UserX, WifiOff, MoreHorizontal } from "lucide-react"
+import { Search, Download, Eye, UserX, WifiOff, MoreHorizontal } from "lucide-react"
 import { toast } from "sonner"
 import { apiClient, type User } from "@/lib/api"
 
@@ -46,17 +47,6 @@ const UserManagement = () => {
     } finally {
       setLoading(false)
     }
-  }
-
-  const getStatusBadge = (status: string) => {
-    const statusConfig = {
-      active: { color: "bg-green-500/10 text-green-600 dark:text-green-400", label: "Active" },
-      expired: { color: "bg-yellow-500/10 text-yellow-600 dark:text-yellow-400", label: "Expired" },
-      blocked: { color: "bg-red-500/10 text-red-600 dark:text-red-400", label: "Blocked" },
-    } as const
-    type StatusKey = keyof typeof statusConfig
-    const config = statusConfig[status as StatusKey] || statusConfig.expired
-    return <Badge className={`${config.color} border-0`}>{config.label}</Badge>
   }
 
   const handleUserAction = async (userId: number, action: string) => {
@@ -173,7 +163,7 @@ const UserManagement = () => {
                     <TableRow key={user.id}>
                       <TableCell className="font-medium text-slate-900 dark:text-white">{user.phone}</TableCell>
                       <TableCell className="font-mono text-sm text-slate-600 dark:text-slate-400">{user.macAddress}</TableCell>
-                      <TableCell>{getStatusBadge(user.status)}</TableCell>
+                      <TableCell>{<StatusBadge status={user.status} />}</TableCell>
                       <TableCell className="text-slate-600 dark:text-slate-400">{user.currentPackage || "None"}</TableCell>
                       <TableCell className="text-slate-900 dark:text-white font-medium">Ksh {user.totalSpent}</TableCell>
                       <TableCell className="text-slate-600 dark:text-slate-400">{user.lastSeen}</TableCell>

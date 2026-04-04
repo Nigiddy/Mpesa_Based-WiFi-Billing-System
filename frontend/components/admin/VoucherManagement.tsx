@@ -4,7 +4,8 @@ import { useState, useEffect, useCallback } from "react"
 import { Ticket, Plus, Download, RefreshCw, Copy, Check, Filter } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
+import { StatusBadge } from "@/components/ui/status-badge"
+import { DataStateWrapper } from "@/components/ui/data-state"
 import { apiClient, type Voucher } from "@/lib/api"
 import { toast } from "sonner"
 
@@ -18,13 +19,6 @@ const PLAN_OPTIONS = [
   { key: "12Hrs", label: "12 Hours", price: "KSh 20" },
   { key: "24Hrs", label: "24 Hours", price: "KSh 30" },
 ]
-
-const STATUS_BADGE: Record<string, { label: string; className: string }> = {
-  unused:     { label: "Unused",     className: "bg-blue-500/10 text-blue-400 border-blue-500/20" },
-  active:     { label: "Active",     className: "bg-green-500/10 text-green-400 border-green-500/20" },
-  fully_used: { label: "Used",       className: "bg-zinc-500/10 text-zinc-400 border-zinc-500/20" },
-  expired:    { label: "Expired",    className: "bg-red-500/10 text-red-400 border-red-500/20" },
-}
 
 // ─── Generate Dialog ──────────────────────────────────────────────────────────
 
@@ -162,7 +156,6 @@ function CopyButton({ text }: { text: string }) {
 // ─── Voucher Row ──────────────────────────────────────────────────────────────
 
 function VoucherRow({ v }: { v: Voucher }) {
-  const badge = STATUS_BADGE[v.status] ?? STATUS_BADGE.unused
   const expiryLabel = v.expiresAt
     ? new Date(v.expiresAt).toLocaleDateString()
     : "Never"
@@ -178,9 +171,7 @@ function VoucherRow({ v }: { v: Voucher }) {
         {v.currentUses} / {v.maxUses}
       </td>
       <td className="px-4 py-3">
-        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${badge.className}`}>
-          {badge.label}
-        </span>
+        <StatusBadge status={v.status} />
       </td>
       <td className="px-4 py-3 text-muted-foreground">{expiryLabel}</td>
       <td className="px-4 py-3 text-muted-foreground">

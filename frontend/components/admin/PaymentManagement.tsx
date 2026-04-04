@@ -3,11 +3,12 @@ import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
-import { Badge } from "@/components/ui/badge"
+import { StatusBadge } from "@/components/ui/status-badge"
+import { DataStateWrapper } from "@/components/ui/data-state"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Search, Download, Eye, Trash2, CheckCircle, XCircle, Clock, RefreshCw, MoreHorizontal } from "lucide-react"
+import { Search, Download, Eye, RefreshCw, MoreHorizontal } from "lucide-react"
 import { toast } from "sonner"
 import { apiClient, type Transaction } from "@/lib/api"
 
@@ -46,23 +47,6 @@ const PaymentManagement = () => {
     } finally {
       setLoading(false)
     }
-  }
-
-  const getStatusBadge = (status: string) => {
-    const statusConfig = {
-      completed: { color: "bg-green-500/10 text-green-600 dark:text-green-400", icon: CheckCircle },
-      failed: { color: "bg-red-500/10 text-red-600 dark:text-red-400", icon: XCircle },
-      pending: { color: "bg-yellow-500/10 text-yellow-600 dark:text-yellow-400", icon: Clock },
-      refunded: { color: "bg-blue-500/10 text-blue-600 dark:text-blue-400", icon: RefreshCw },
-    }
-    const config = statusConfig[status] || statusConfig.pending
-    const Icon = config.icon
-    return (
-      <Badge className={`${config.color} border-0 flex items-center gap-1`}>
-        <Icon className="h-3 w-3" />
-        {status.charAt(0).toUpperCase() + status.slice(1)}
-      </Badge>
-    )
   }
 
   const handleRefund = async (transactionId: string) => {
@@ -152,7 +136,7 @@ const PaymentManagement = () => {
                       <TableCell className="text-slate-600 dark:text-slate-400">{transaction.phone}</TableCell>
                       <TableCell className="text-slate-600 dark:text-slate-400">{transaction.package}</TableCell>
                       <TableCell className="font-medium text-slate-900 dark:text-white">Ksh {transaction.amount}</TableCell>
-                      <TableCell>{getStatusBadge(transaction.status)}</TableCell>
+                      <TableCell>{<StatusBadge status={transaction.status} />}</TableCell>
                       <TableCell className="font-mono text-sm text-slate-600 dark:text-slate-400">{transaction.mpesaRef}</TableCell>
                       <TableCell className="text-slate-600 dark:text-slate-400">{transaction.timestamp}</TableCell>
                       <TableCell>
