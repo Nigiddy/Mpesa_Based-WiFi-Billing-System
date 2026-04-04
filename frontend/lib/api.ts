@@ -1,5 +1,11 @@
 // API configuration optimized for Node.js/Express backend
-export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000"
+if (!process.env.NEXT_PUBLIC_API_URL) {
+  throw new Error(
+    'NEXT_PUBLIC_API_URL environment variable is required. '
+    + 'Please set it in .env.local or your deployment environment.'
+  )
+}
+export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL
 
 export interface ApiResponse<T = any> {
   success: boolean
@@ -139,7 +145,6 @@ class ApiClient {
       const response = await this.request<{ token: string }>("/api/admin/csrf-token")
       if (response.success && response.data?.token) {
         this.csrfToken = response.data.token
-        console.log("✅ CSRF token fetched successfully")
         return this.csrfToken
       }
     } catch (error) {
@@ -403,7 +408,6 @@ export class WebSocketClient {
       this.ws = new WebSocket(wsUrl)
 
       this.ws.onopen = () => {
-        console.log("WebSocket connected")
         this.reconnectAttempts = 0
       }
 
@@ -413,7 +417,6 @@ export class WebSocketClient {
       }
 
       this.ws.onclose = () => {
-        console.log("WebSocket disconnected")
         this.reconnect()
       }
 
@@ -452,7 +455,6 @@ export class WebSocketClient {
     if (this.reconnectAttempts < this.maxReconnectAttempts) {
       this.reconnectAttempts++
       setTimeout(() => {
-        console.log(`Attempting to reconnect WebSocket (${this.reconnectAttempts}/${this.maxReconnectAttempts})`)
         this.connect()
       }, this.reconnectInterval)
     }

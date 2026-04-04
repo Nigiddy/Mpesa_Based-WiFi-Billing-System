@@ -37,7 +37,6 @@ export function usePayment() {
       apiClient.checkSessionStatus(macFromUrl).then(response => {
         if (response.success && response.data?.hasActiveSession) {
           setHasActiveSession(true)
-          console.log("User has active session, expires at:", response.data.expiresAt)
           toast.info("You already have an active session.", {
             description: `It expires at ${new Date(response.data.expiresAt!).toLocaleString()}`,
           })

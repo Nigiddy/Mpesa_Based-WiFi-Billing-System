@@ -49,7 +49,6 @@ export function PaymentSuccessModal({ isOpen, onClose, paymentData }: PaymentSuc
 
   const handleDownloadReceipt = () => {
     // TODO: Integrate with backend to generate PDF receipt
-    console.log("Download receipt for transaction:", paymentData.transactionId)
     // Backend endpoint: GET /api/receipts/${transactionId}
   }
 

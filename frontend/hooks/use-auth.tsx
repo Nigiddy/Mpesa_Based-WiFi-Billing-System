@@ -33,7 +33,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setAuthState({ isAuthenticated: true, admin: response.admin, loading: false })
           
           // ✅ Fetch CSRF token for admin mutations
-          console.log("📛 Fetching CSRF token for admin dashboard...")
           await apiClient.fetchCsrfToken()
         } else {
           setAuthState({ isAuthenticated: false, admin: null, loading: false })
@@ -52,7 +51,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setAuthState({ isAuthenticated: true, admin: response.admin, loading: false })
         
         // ✅ Fetch CSRF token after login
-        console.log("📛 Fetching CSRF token after login...")
         await apiClient.fetchCsrfToken()
         
         return { success: true }
