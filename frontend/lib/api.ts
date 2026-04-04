@@ -379,15 +379,8 @@ class ApiClient {
 
   /** Triggers a CSV file download in the browser */
   exportVouchersCSV(): void {
-    const token = typeof window !== "undefined" ? localStorage.getItem("admin_token") : null
     const url = `${API_BASE_URL}/api/vouchers/export/csv`
-    const link = document.createElement("a")
-    link.href = url
-    link.setAttribute("download", `vouchers_${new Date().toISOString().slice(0, 10)}.csv`)
-    if (token) link.setAttribute("data-auth", token)
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
+    window.location.assign(url)
   }
 
   async redeemVoucher(code: string, macAddress: string): Promise<ApiResponse<VoucherRedemptionResult>> {
