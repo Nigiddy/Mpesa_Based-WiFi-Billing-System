@@ -1,16 +1,11 @@
 "use client"
 
 import { useState, useEffect, createContext, useContext, ReactNode } from 'react'
-import { apiClient } from '@/lib/api'
-
-interface Admin {
-  id: number
-  email: string
-}
+import { apiClient, AdminSession } from '@/lib/api'
 
 interface AuthContextType {
   isAuthenticated: boolean
-  admin: Admin | null
+  admin: AdminSession | null
   loading: boolean
   login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>
   logout: () => void
@@ -19,7 +14,7 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [authState, setAuthState] = useState({
+  const [authState, setAuthState] = useState<{ isAuthenticated: boolean; admin: AdminSession | null; loading: boolean }>({
     isAuthenticated: false,
     admin: null,
     loading: true,

@@ -11,6 +11,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Search, Download, Eye, RefreshCw, MoreHorizontal } from "lucide-react"
 import { toast } from "sonner"
 import { apiClient, type Transaction } from "@/lib/api"
+import { formatCurrency } from "@/lib/utils"
+import { MESSAGES } from "@/lib/constants/messages"
 
 const PaymentManagement = () => {
   const [transactions, setTransactions] = useState<Transaction[]>([])
@@ -34,12 +36,12 @@ const PaymentManagement = () => {
         setTransactions(response.data.transactions)
         setTotalPages(response.data.totalPages)
       } else {
-        throw new Error(response.error || "Failed to fetch transactions")
+        throw new Error(response.error || MESSAGES.ERRORS.FETCH_TRANSACTIONS)
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Error fetching transactions:", error)
-      toast.error("Failed to load transactions", {
-        description: error.message,
+      toast.error(MESSAGES.ERRORS.FETCH_TRANSACTIONS, {
+        description: error instanceof Error ? error.message : MESSAGES.ERRORS.UNKNOWN_ERROR,
       })
     } finally {
       setLoading(false)
@@ -55,16 +57,16 @@ const PaymentManagement = () => {
       const response = await apiClient.refundTransaction(transactionId, "Admin initiated refund")
       if (response.success) {
         const transaction = transactions.find((t) => t.id === transactionId)
-        toast.success("Refund processed successfully", {
+        toast.success(MESSAGES.SUCCESS.REFUND_PROCESSED, {
           description: `Ksh ${transaction?.amount} refunded to ${transaction?.phone}`,
         })
         setRefreshKey((k) => k + 1) // Trigger re-fetch
       } else {
-        throw new Error(response.error || "Refund failed")
+        throw new Error(response.error || MESSAGES.ERRORS.REFUND_FAILED)
       }
-    } catch (error: any) {
-      toast.error("Refund failed", {
-        description: error.message,
+    } catch (error: unknown) {
+      toast.error(MESSAGES.ERRORS.REFUND_FAILED, {
+        description: error instanceof Error ? error.message : MESSAGES.ERRORS.UNKNOWN_ERROR,
       })
     }
   }
@@ -136,7 +138,7 @@ const PaymentManagement = () => {
                       <TableCell className="font-mono text-sm text-slate-900 dark:text-white">{transaction.id}</TableCell>
                       <TableCell className="text-slate-600 dark:text-slate-400">{transaction.phone}</TableCell>
                       <TableCell className="text-slate-600 dark:text-slate-400">{transaction.package}</TableCell>
-                      <TableCell className="font-medium text-slate-900 dark:text-white">Ksh {transaction.amount}</TableCell>
+                      <TableCell className="font-medium text-slate-900 dark:text-white">{formatCurrency(transaction.amount)}</TableCell>
                       <TableCell>{<StatusBadge status={transaction.status} />}</TableCell>
                       <TableCell className="font-mono text-sm text-slate-600 dark:text-slate-400">{transaction.mpesaRef}</TableCell>
                       <TableCell className="text-slate-600 dark:text-slate-400">{transaction.timestamp}</TableCell>
@@ -156,7 +158,7 @@ const PaymentManagement = () => {
                               <>
                                 <DropdownMenuItem
                                   onClick={() => {
-                                    if (confirm("Are you sure you want to refund this transaction? This action cannot be undone.")) {
+                                    if (confirm(MESSAGES.CONFIRMATIONS.REFUND_TRANSACTION)) {
                                       handleRefund(transaction.id)
                                     }
                                   }}

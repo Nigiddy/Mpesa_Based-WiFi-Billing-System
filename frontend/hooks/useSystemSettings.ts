@@ -2,8 +2,8 @@
 
 import { useState, useEffect, useCallback } from "react"
 import { toast } from "sonner"
-import { apiClient } from "@/lib/api"
-import { SystemSettings } from "@/types/settings"
+import { apiClient, SystemSettings } from "@/lib/api"
+import { MESSAGES } from "@/lib/constants/messages"
 
 export const useSystemSettings = () => {
     const [settings, setSettings] = useState<SystemSettings | null>(null)
@@ -17,11 +17,11 @@ export const useSystemSettings = () => {
             if (response.success && response.data) {
                 setSettings(response.data)
             } else {
-                throw new Error(response.error || "Failed to fetch settings")
+                throw new Error(response.error || MESSAGES.ERRORS.FETCH_SETTINGS)
             }
         } catch (error) {
             console.error("Error fetching settings:", error)
-            toast.error("Failed to load settings", {
+            toast.error(MESSAGES.ERRORS.FETCH_SETTINGS, {
                 description: "Please try refreshing the page",
             })
         } finally {
@@ -32,7 +32,7 @@ export const useSystemSettings = () => {
     useEffect(() => {
         let cancelled = false
         fetchSettings().catch(() => {
-            if (!cancelled) toast.error("Failed to load settings")
+            if (!cancelled) toast.error(MESSAGES.ERRORS.FETCH_SETTINGS)
         })
         return () => { cancelled = true }
     }, [fetchSettings])
@@ -48,15 +48,15 @@ export const useSystemSettings = () => {
             setSaving(true)
             const response = await apiClient.updateSystemSettings(settings)
             if (response.success) {
-                toast.success("Settings saved successfully", {
+                toast.success(MESSAGES.SUCCESS.SETTINGS_SAVED, {
                     description: "All system settings have been updated",
                 })
             } else {
-                throw new Error(response.error || "Failed to save settings")
+                throw new Error(response.error || MESSAGES.ERRORS.ACTION_FAILED)
             }
-        } catch (error: any) {
-            toast.error("Failed to save settings", {
-                description: error.message,
+        } catch (error: unknown) {
+            toast.error(MESSAGES.ERRORS.ACTION_FAILED, {
+                description: error instanceof Error ? error.message : MESSAGES.ERRORS.UNKNOWN_ERROR,
             })
         } finally {
             setSaving(false)
@@ -68,12 +68,12 @@ export const useSystemSettings = () => {
         try {
             const response = await apiClient.restartNetworkService()
             if (response.success) {
-                toast.success("Network service restarted successfully", { id: "restart-service" })
+                toast.success(MESSAGES.SUCCESS.NETWORK_RESTARTED, { id: "restart-service" })
             } else {
                 throw new Error(response.error)
             }
         } catch (error) {
-            toast.error("Failed to restart network service", { id: "restart-service" })
+            toast.error(MESSAGES.ERRORS.ACTION_FAILED, { id: "restart-service" })
         }
     }
 
@@ -82,7 +82,7 @@ export const useSystemSettings = () => {
         try {
             const response = await apiClient.backupDatabase()
             if (response.success) {
-                toast.success("Database backup completed", {
+                toast.success(MESSAGES.SUCCESS.DB_BACKUP, {
                     id: "backup-db",
                     description: "Backup saved to server storage",
                 })
@@ -90,7 +90,7 @@ export const useSystemSettings = () => {
                 throw new Error(response.error)
             }
         } catch (error) {
-            toast.error("Failed to create backup", { id: "backup-db" })
+            toast.error(MESSAGES.ERRORS.ACTION_FAILED, { id: "backup-db" })
         }
     }
 
@@ -99,12 +99,12 @@ export const useSystemSettings = () => {
         try {
             const response = await apiClient.disconnectAllUsers()
             if (response.success) {
-                toast.success("All users disconnected", { id: "disconnect-all" })
+                toast.success(MESSAGES.SUCCESS.ALL_USERS_DISCONNECTED, { id: "disconnect-all" })
             } else {
                 throw new Error(response.error)
             }
         } catch (error) {
-            toast.error("Failed to disconnect users", { id: "disconnect-all" })
+            toast.error(MESSAGES.ERRORS.ACTION_FAILED, { id: "disconnect-all" })
         }
     }
 

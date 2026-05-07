@@ -2,6 +2,7 @@
 import { Card, CardContent } from "@/components/ui/card"
 import { Users, Activity, DollarSign, TrendingUp } from "lucide-react"
 import { SystemStats } from "@/lib/api"
+import { formatCurrency } from "@/lib/utils"
 
 const StatsCards = ({ stats }: { stats: SystemStats | null }) => {
   const defaultStats = {
@@ -25,7 +26,7 @@ const StatsCards = ({ stats }: { stats: SystemStats | null }) => {
   const statsConfig = [
     { title: "Total Users", value: currentStats.totalUsers.toLocaleString(), change: "+12%", icon: Users, colorKey: "blue" as const },
     { title: "Active Sessions", value: currentStats.activeUsers.toString(), change: "+5%", icon: Activity, colorKey: "green" as const },
-    { title: "Today's Revenue", value: `Ksh ${currentStats.todayRevenue.toLocaleString()}`, change: "+18%", icon: DollarSign, colorKey: "purple" as const },
+    { title: "Today's Revenue", value: formatCurrency(currentStats.todayRevenue), change: "+18%", icon: DollarSign, colorKey: "purple" as const },
     { title: "Success Rate", value: `${currentStats.successRate.toFixed(1)}%`, change: "+2.1%", icon: TrendingUp, colorKey: "orange" as const },
   ]
   return (

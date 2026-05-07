@@ -4,6 +4,7 @@ import { useState, useEffect } from "react"
 import { toast } from "sonner"
 import { apiClient, type PaymentRequest } from "@/lib/api"
 import { packages } from "@/lib/packages"
+import { formatDate } from "@/lib/utils"
 
 import { useSearchParams } from "next/navigation"
 
@@ -38,7 +39,7 @@ export function usePayment() {
         if (response.success && response.data?.hasActiveSession) {
           setHasActiveSession(true)
           toast.info("You already have an active session.", {
-            description: `It expires at ${new Date(response.data.expiresAt!).toLocaleString()}`,
+            description: `It expires at ${formatDate(response.data.expiresAt!)}`,
           })
           // Redirect to intended destination — they're already connected
           setTimeout(() => { window.location.href = orig }, 2500)
@@ -122,7 +123,7 @@ export function usePayment() {
               setShowSuccessModal(true)
               toast.success("Payment successful!", {
                 id: "payment-toast",
-                description: `WiFi access granted until ${response.data.expiresAt ? new Date(response.data.expiresAt).toLocaleTimeString() : 'session expires'}. Redirecting…`,
+                description: `WiFi access granted until ${response.data.expiresAt ? formatDate(response.data.expiresAt) : 'session expires'}. Redirecting…`,
               })
               setTimeout(() => { window.location.href = linkOrig }, 3000)
             }

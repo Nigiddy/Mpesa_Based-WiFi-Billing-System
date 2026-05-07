@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { CheckCircle, Wifi, Clock, Download, Share2, X } from "lucide-react"
+import { cn, formatCurrency, formatDate } from '@/lib/utils'
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -119,7 +120,7 @@ export function PaymentSuccessModal({ isOpen, onClose, paymentData }: PaymentSuc
               </div>
               <div className="text-center p-4 rounded-lg bg-slate-50 dark:bg-slate-800/50">
                 <p className="text-sm text-slate-600 dark:text-slate-400">Amount Paid</p>
-                <p className="font-semibold text-slate-900 dark:text-white">Ksh {paymentData.amount}</p>
+                <p className="font-semibold text-slate-900 dark:text-white">{formatCurrency(paymentData.amount)}</p>
               </div>
             </div>
 
@@ -134,7 +135,7 @@ export function PaymentSuccessModal({ isOpen, onClose, paymentData }: PaymentSuc
                     <div>
                       <p className="font-semibold text-slate-900 dark:text-white">Time Remaining</p>
                       <p className="text-sm text-slate-600 dark:text-slate-400">
-                        Expires at {new Date(paymentData.expiresAt).toLocaleString()}
+                        Expires at {formatDate(paymentData.expiresAt)}
                       </p>
                     </div>
                   </div>

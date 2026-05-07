@@ -15,6 +15,7 @@ import SystemSettings from "@/components/admin/SystemSettings"
 import VoucherManagement from "@/components/admin/VoucherManagement"
 import { toast } from "sonner"
 import { motion } from "framer-motion"
+import { formatCurrency } from "@/lib/utils"
 
 // Note: Kept your custom imports that hold complex logic
 import { RealtimeActivityFeed } from "@/components/AdminDashboardComponents"
@@ -82,7 +83,7 @@ export default function AdminDashboard() {
 
   // Helper for the clean stat cards
   const metrics = [
-    { label: "Today's Revenue", value: `KSh ${(stats?.todayRevenue || 0).toLocaleString()}`, icon: BarChart3 },
+    { label: "Today's Revenue", value: formatCurrency(stats?.todayRevenue || 0), icon: BarChart3 },
     { label: "Active Users", value: stats?.activeUsers || 0, icon: Users },
     { label: "Pending Payments", value: stats?.pendingPayments || 0, icon: CreditCard },
     { label: "Success Rate", value: `${stats?.successRate || 100}%`, icon: PieChart },
