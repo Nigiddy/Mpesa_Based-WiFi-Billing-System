@@ -13,7 +13,7 @@ import { toast } from "sonner"
 import { apiClient } from "@/lib/api"
 
 const contactMethods = [
-  { icon: Phone, label: "Call Us", value: "+254 700 000 000", href: "tel:+254700000000" },
+  { icon: Phone, label: "Call Us", value: "+254 775 551 019", href: "tel:+254775551019" },
   { icon: Mail, label: "Email", value: "support@qonnect.co.ke", href: "mailto:support@qonnect.co.ke" },
   { icon: MessageCircle, label: "Live Chat", value: "Start a conversation", href: "#chat" },
 ]
@@ -43,7 +43,7 @@ const faqs = [
 
 export default function SupportPage() {
   useDynamicTitle("Support - Qonnect")
-  
+
   const [formData, setFormData] = useState({ name: "", email: "", phone: "", subject: "", message: "" })
   const [isSubmitting, setIsSubmitting] = useState(false)
 
@@ -80,7 +80,7 @@ export default function SupportPage() {
   return (
     <div className="min-h-screen bg-background py-20">
       <main className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-5xl">
-        
+
         {/* Header */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -106,8 +106,8 @@ export default function SupportPage() {
           {contactMethods.map((method, index) => {
             const Icon = method.icon
             return (
-              <a 
-                key={index} 
+              <a
+                key={index}
                 href={method.href}
                 className="flex flex-col items-center sm:items-start p-4 rounded-xl hover:bg-muted/50 transition-colors"
               >
@@ -121,7 +121,7 @@ export default function SupportPage() {
 
         {/* Form and FAQ Section */}
         <div className="grid lg:grid-cols-2 gap-16 items-start">
-          
+
           {/* Left Column: Contact Form */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -137,14 +137,14 @@ export default function SupportPage() {
             <form onSubmit={handleSubmit} className="space-y-6">
               <div className="space-y-2">
                 <Label htmlFor="name">Full Name</Label>
-                <Input id="name" value={formData.name} onChange={handleInputChange} placeholder="John Doe" className="h-12 bg-transparent" />
+                <Input id="name" value={formData.name} onChange={handleInputChange} placeholder="Your name" className="h-12 bg-transparent" />
               </div>
-              
+
               <div className="space-y-2">
                 <Label htmlFor="email">Email Address</Label>
-                <Input id="email" type="email" value={formData.email} onChange={handleInputChange} placeholder="john@example.com" className="h-12 bg-transparent" />
+                <Input id="email" type="email" value={formData.email} onChange={handleInputChange} placeholder="name@gmail.com" className="h-12 bg-transparent" />
               </div>
-              
+
               <div className="space-y-2">
                 <Label htmlFor="message">Message</Label>
                 <Textarea id="message" value={formData.message} onChange={handleInputChange} rows={5} placeholder="How can we help you today?" className="resize-none bg-transparent" />
@@ -169,7 +169,7 @@ export default function SupportPage() {
             <div className="mb-8">
               <h2 className="text-2xl font-bold text-foreground mb-2">Frequently Asked Questions</h2>
             </div>
-            
+
             <Accordion type="single" collapsible className="w-full space-y-2">
               {faqs.map((faq, index) => (
                 <AccordionItem key={index} value={`item-${index}`} className="border-b border-border/50 px-1">
