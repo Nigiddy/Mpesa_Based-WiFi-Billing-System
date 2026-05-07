@@ -4,182 +4,16 @@ import { useState, useEffect, useCallback } from "react"
 import { Ticket, Plus, Download, RefreshCw, Copy, Check, Filter } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { StatusBadge } from "@/components/ui/status-badge"
-import { DataStateWrapper } from "@/components/ui/data-state"
 import { apiClient, type Voucher } from "@/lib/api"
+import { LABELS } from "@/lib/constants/labels"
+import { MESSAGES } from "@/lib/constants/messages"
 import { toast } from "sonner"
+import { GenerateDialog } from "./vouchers/GenerateDialog"
+import { VoucherRow } from "./vouchers/VoucherRow"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type VoucherStatus = "all" | "unused" | "active" | "fully_used" | "expired"
-
-const PLAN_OPTIONS = [
-  { key: "1Hr",   label: "1 Hour",   price: "KSh 10" },
-  { key: "4Hrs",  label: "4 Hours",  price: "KSh 15" },
-  { key: "12Hrs", label: "12 Hours", price: "KSh 20" },
-  { key: "24Hrs", label: "24 Hours", price: "KSh 30" },
-]
-
-// ─── Generate Dialog ──────────────────────────────────────────────────────────
-
-function GenerateDialog({
-  onClose,
-  onGenerated,
-}: {
-  onClose: () => void
-  onGenerated: (vouchers: Voucher[]) => void
-}) {
-  const [planKey, setPlanKey]             = useState("1Hr")
-  const [quantity, setQuantity]           = useState(1)
-  const [maxUses, setMaxUses]             = useState(1)
-  const [expiresInDays, setExpiresInDays] = useState(30)
-  const [loading, setLoading]             = useState(false)
-
-  const handleGenerate = async () => {
-    setLoading(true)
-    try {
-      const res = await apiClient.generateVouchers({ planKey, quantity, maxUses, expiresInDays })
-      if (!res.success || !res.data) throw new Error(res.error || "Generation failed")
-      toast.success(`${res.data.length} voucher(s) generated`)
-      onGenerated(res.data)
-      onClose()
-    } catch (e: any) {
-      toast.error(e.message || "Failed to generate vouchers")
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="bg-card border border-border rounded-2xl shadow-2xl w-full max-w-md mx-4 p-6 space-y-5">
-        <h2 className="text-lg font-semibold text-foreground flex items-center gap-2">
-          <Ticket className="w-5 h-5 text-primary" /> Generate Vouchers
-        </h2>
-
-        {/* Plan */}
-        <div className="space-y-1.5">
-          <label className="text-sm font-medium text-muted-foreground">Plan</label>
-          <div className="grid grid-cols-2 gap-2">
-            {PLAN_OPTIONS.map((p) => (
-              <button
-                key={p.key}
-                onClick={() => setPlanKey(p.key)}
-                className={`rounded-lg border px-3 py-2 text-left text-sm transition-colors ${
-                  planKey === p.key
-                    ? "border-primary bg-primary/10 text-primary"
-                    : "border-border text-muted-foreground hover:border-primary/50"
-                }`}
-              >
-                <div className="font-medium">{p.label}</div>
-                <div className="text-xs opacity-70">{p.price}</div>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Quantity */}
-        <div className="space-y-1.5">
-          <label className="text-sm font-medium text-muted-foreground">
-            Quantity <span className="text-xs">(1–500)</span>
-          </label>
-          <input
-            type="number"
-            min={1}
-            max={500}
-            value={quantity}
-            onChange={(e) => setQuantity(Math.min(500, Math.max(1, Number(e.target.value))))}
-            className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
-          />
-        </div>
-
-        {/* Max Uses */}
-        <div className="space-y-1.5">
-          <label className="text-sm font-medium text-muted-foreground">Max Uses per Code</label>
-          <input
-            type="number"
-            min={1}
-            max={100}
-            value={maxUses}
-            onChange={(e) => setMaxUses(Math.max(1, Number(e.target.value)))}
-            className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
-          />
-        </div>
-
-        {/* Expiry */}
-        <div className="space-y-1.5">
-          <label className="text-sm font-medium text-muted-foreground">Expires in (days)</label>
-          <input
-            type="number"
-            min={1}
-            max={365}
-            value={expiresInDays}
-            onChange={(e) => setExpiresInDays(Math.max(1, Number(e.target.value)))}
-            className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
-          />
-        </div>
-
-        {/* Actions */}
-        <div className="flex gap-3 pt-1">
-          <Button variant="outline" className="flex-1" onClick={onClose} disabled={loading}>
-            Cancel
-          </Button>
-          <Button className="flex-1" onClick={handleGenerate} disabled={loading}>
-            {loading ? "Generating…" : `Generate ${quantity}`}
-          </Button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// ─── Copy Button ──────────────────────────────────────────────────────────────
-
-function CopyButton({ text }: { text: string }) {
-  const [copied, setCopied] = useState(false)
-  const handleCopy = () => {
-    navigator.clipboard.writeText(text)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 1500)
-  }
-  return (
-    <button
-      onClick={handleCopy}
-      title="Copy code"
-      className="ml-2 text-muted-foreground hover:text-foreground transition-colors"
-    >
-      {copied ? <Check className="w-3.5 h-3.5 text-success" /> : <Copy className="w-3.5 h-3.5" />}
-    </button>
-  )
-}
-
-// ─── Voucher Row ──────────────────────────────────────────────────────────────
-
-function VoucherRow({ v }: { v: Voucher }) {
-  const expiryLabel = v.expiresAt
-    ? new Date(v.expiresAt).toLocaleDateString()
-    : "Never"
-
-  return (
-    <tr className="border-b border-border/40 hover:bg-muted/30 transition-colors text-sm">
-      <td className="px-4 py-3 font-mono font-medium text-foreground tracking-wider whitespace-nowrap">
-        {v.code}
-        <CopyButton text={v.code} />
-      </td>
-      <td className="px-4 py-3 text-muted-foreground">{v.planKey}</td>
-      <td className="px-4 py-3 text-center text-muted-foreground">
-        {v.currentUses} / {v.maxUses}
-      </td>
-      <td className="px-4 py-3">
-        <StatusBadge status={v.status} />
-      </td>
-      <td className="px-4 py-3 text-muted-foreground">{expiryLabel}</td>
-      <td className="px-4 py-3 text-muted-foreground">
-        {new Date(v.createdAt).toLocaleDateString()}
-      </td>
-    </tr>
-  )
-}
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
@@ -206,10 +40,10 @@ export default function VoucherManagement() {
         setTotal(res.data.total)
         setTotalPages(res.data.totalPages)
       } else {
-        toast.error(res.error || "Failed to load vouchers")
+        toast.error(res.error || MESSAGES.ERRORS.FETCH_VOUCHERS)
       }
     } catch (err) {
-      toast.error("Failed to load vouchers")
+      toast.error(MESSAGES.ERRORS.FETCH_VOUCHERS)
     } finally {
       setLoading(false)
     }
@@ -218,7 +52,7 @@ export default function VoucherManagement() {
   useEffect(() => {
     let cancelled = false
     fetchVouchers().catch(() => {
-      if (!cancelled) toast.error("Failed to load vouchers")
+      if (!cancelled) toast.error(MESSAGES.ERRORS.FETCH_VOUCHERS)
     })
     return () => { cancelled = true }
   }, [fetchVouchers])

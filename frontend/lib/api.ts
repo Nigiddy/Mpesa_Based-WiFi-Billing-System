@@ -4,6 +4,60 @@ if (!process.env.NEXT_PUBLIC_API_URL) {
 }
 export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL
 
+export interface AdminSession {
+  id: string
+  email: string
+  role: string
+  lastLogin?: string
+}
+
+export interface SupportRequest {
+  id: string
+  name: string
+  email: string
+  phone: string
+  subject: string
+  message: string
+  status: 'open' | 'closed' | 'in_progress'
+  createdAt: string
+}
+
+export interface SystemSettings {
+  networkName: string
+  adminEmail: string
+  currency: string
+  taxRate: number
+  paymentGateway: string
+  maxConcurrentUsers: number
+  sessionTimeout: number
+  autoDisconnect: boolean
+  maintenanceMode: boolean
+  mpesaTimeout: number
+  defaultPackage: "1hour" | "4hours" | "12hours" | "24hours"
+  [key: string]: string | number | boolean | undefined
+}
+
+export interface SystemLog {
+  id: string
+  level: 'info' | 'warn' | 'error'
+  message: string
+  timestamp: string
+  metadata?: Record<string, unknown>
+}
+
+export interface ConnectedDevice {
+  macAddress: string
+  ipAddress: string
+  connectedAt: string
+  dataUsed: number
+  userId?: number
+}
+
+export interface WebSocketMessage {
+  type: 'payment_status' | 'user_connected' | 'user_disconnected' | string
+  payload: Record<string, unknown>
+}
+
 export interface ApiResponse<T = any> {
   success: boolean
   data?: T
@@ -181,7 +235,7 @@ class ApiClient {
   }
 
   // Auth APIs
-  async login(email: string, password: string): Promise<ApiResponse<{ admin: any }>> {
+  async login(email: string, password: string): Promise<ApiResponse<{ admin: AdminSession }>> {
     return this.request(
       "/auth/admin/login",
       {
@@ -198,7 +252,7 @@ class ApiClient {
     })
   }
 
-  async checkAuthStatus(): Promise<ApiResponse<{ admin: any }>> {
+  async checkAuthStatus(): Promise<ApiResponse<{ admin: AdminSession }>> {
     return this.request("/auth/admin/me", {}, { onUnauthorized: "silent" })
   }
 
@@ -302,7 +356,7 @@ class ApiClient {
     status?: string
     page?: number
     limit?: number
-  }): Promise<ApiResponse<{ requests: any[]; total: number; page: number; totalPages: number }>> {
+  }): Promise<ApiResponse<{ requests: SupportRequest[]; total: number; page: number; totalPages: number }>> {
     const queryParams = new URLSearchParams()
     if (params?.status) queryParams.append("status", params.status)
     if (params?.page) queryParams.append("page", params.page.toString())
@@ -328,11 +382,11 @@ class ApiClient {
     return { success: true, data: mapped }
   }
 
-  async getSystemSettings(): Promise<ApiResponse<any>> {
-    return { success: true, data: {} }
+  async getSystemSettings(): Promise<ApiResponse<SystemSettings>> {
+    return { success: true, data: { networkName: "Qonnect", adminEmail: "admin@qonnect.com", currency: "KSh", taxRate: 0, paymentGateway: "mpesa", maxConcurrentUsers: 100, sessionTimeout: 2, autoDisconnect: true, maintenanceMode: false, mpesaTimeout: 60, defaultPackage: "1hour" } }
   }
 
-  async updateSystemSettings(settings: any): Promise<ApiResponse> {
+  async updateSystemSettings(settings: Partial<SystemSettings>): Promise<ApiResponse> {
     return { success: true }
   }
 
@@ -344,7 +398,7 @@ class ApiClient {
     return { success: false, error: "Not implemented" }
   }
 
-  async getSystemLogs(params?: { level?: string; limit?: number }): Promise<ApiResponse<any[]>> {
+  async getSystemLogs(params?: { level?: string; limit?: number }): Promise<ApiResponse<SystemLog[]>> {
     const queryParams = new URLSearchParams()
     if (params?.level) queryParams.append("level", params.level)
     if (params?.limit) queryParams.append("limit", params.limit.toString())
@@ -352,7 +406,7 @@ class ApiClient {
   }
 
   // Network Management APIs
-  async getConnectedDevices(): Promise<ApiResponse<any[]>> {
+  async getConnectedDevices(): Promise<ApiResponse<ConnectedDevice[]>> {
     return this.request("/api/network/devices")
   }
 
@@ -445,7 +499,7 @@ export class WebSocketClient {
     }
   }
 
-  private handleMessage(data: any) {
+  private handleMessage(data: WebSocketMessage) {
     // Emit custom events for different message types
     if (data.type === "payment_status") {
       window.dispatchEvent(
@@ -484,7 +538,7 @@ export class WebSocketClient {
     }
   }
 
-  send(data: any) {
+  send(data: WebSocketMessage) {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(data))
     }

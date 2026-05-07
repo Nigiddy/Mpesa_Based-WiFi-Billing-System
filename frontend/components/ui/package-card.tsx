@@ -3,7 +3,7 @@ import { motion } from 'framer-motion'
 import { CheckCircle, Zap, Database, Clock } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { cn } from '@/lib/utils'
+import { cn, formatCurrency } from '@/lib/utils'
 
 export interface PackageOption {
   id: string | number
@@ -118,7 +118,7 @@ export const PackageCard = React.forwardRef<HTMLDivElement, PackageCardProps>(
           )}
           <div className="text-lg font-bold">{pkg.label}</div>
           <div className="text-2xl font-extrabold text-primary my-1">
-            KSh {pkg.price.toLocaleString()}
+            {formatCurrency(pkg.price)}
           </div>
           <div className="text-sm text-muted-foreground">{pkg.speed}</div>
         </motion.div>
@@ -208,7 +208,7 @@ export const PackageCard = React.forwardRef<HTMLDivElement, PackageCardProps>(
             <div className="mb-6">
               <div className="flex items-baseline gap-1">
                 <span className="text-3xl lg:text-4xl font-bold text-primary">
-                  KSh {pkg.price.toLocaleString()}
+                  {formatCurrency(pkg.price)}
                 </span>
                 {pkg.period && (
                   <span className="text-muted-foreground text-sm font-medium">

@@ -11,6 +11,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Search, Download, Eye, UserX, WifiOff, MoreHorizontal, CheckCircle, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 import { apiClient, type User } from "@/lib/api"
+import { formatCurrency } from "@/lib/utils"
+import { MESSAGES } from "@/lib/constants/messages"
 
 const UserManagement = () => {
   const [users, setUsers] = useState<User[]>([])
@@ -34,12 +36,12 @@ const UserManagement = () => {
         setUsers(response.data.users)
         setTotalPages(response.data.totalPages)
       } else {
-        throw new Error(response.error || "Failed to fetch users")
+        throw new Error(response.error || MESSAGES.ERRORS.FETCH_USERS)
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Error fetching users:", error)
-      toast.error("Failed to load users", {
-        description: error.message,
+      toast.error(MESSAGES.ERRORS.FETCH_USERS, {
+        description: error instanceof Error ? error.message : MESSAGES.ERRORS.UNKNOWN_ERROR,
       })
     } finally {
       setLoading(false)
@@ -58,7 +60,7 @@ const UserManagement = () => {
         case "block":
           response = await apiClient.blockUser(userId)
           if (response.success) {
-            toast.success("User blocked successfully", {
+            toast.success(MESSAGES.SUCCESS.USER_BLOCKED, {
               description: `${user?.phone} has been blocked from accessing the network`,
             })
           }
@@ -66,7 +68,7 @@ const UserManagement = () => {
         case "unblock":
           response = await apiClient.unblockUser(userId)
           if (response.success) {
-            toast.success("User unblocked successfully", {
+            toast.success(MESSAGES.SUCCESS.USER_UNBLOCKED, {
               description: `${user?.phone} can now access the network`,
             })
           }
@@ -74,7 +76,7 @@ const UserManagement = () => {
         case "disconnect":
           response = await apiClient.disconnectUser(userId)
           if (response.success) {
-            toast.success("User disconnected successfully", {
+            toast.success(MESSAGES.SUCCESS.USER_DISCONNECTED, {
               description: `${user?.phone} has been disconnected from the network`,
             })
           }
@@ -82,7 +84,7 @@ const UserManagement = () => {
         case "delete":
           response = await apiClient.deleteUser(userId)
           if (response.success) {
-            toast.success("User deleted successfully", {
+            toast.success(MESSAGES.SUCCESS.USER_DELETED, {
               description: `${user?.phone} has been removed from the system`,
             })
           }
@@ -91,11 +93,11 @@ const UserManagement = () => {
       if (response?.success) {
         setRefreshKey((k) => k + 1) // Trigger re-fetch
       } else {
-        throw new Error(response?.error || "Action failed")
+        throw new Error(response?.error || MESSAGES.ERRORS.ACTION_FAILED)
       }
-    } catch (error: any) {
-      toast.error("Action failed", {
-        description: error.message,
+    } catch (error: unknown) {
+      toast.error(MESSAGES.ERRORS.ACTION_FAILED, {
+        description: error instanceof Error ? error.message : MESSAGES.ERRORS.UNKNOWN_ERROR,
       })
     }
   }
@@ -166,7 +168,7 @@ const UserManagement = () => {
                       <TableCell className="font-mono text-sm text-slate-600 dark:text-slate-400">{user.macAddress}</TableCell>
                       <TableCell>{<StatusBadge status={user.status} />}</TableCell>
                       <TableCell className="text-slate-600 dark:text-slate-400">{user.currentPackage || "None"}</TableCell>
-                      <TableCell className="text-slate-900 dark:text-white font-medium">Ksh {user.totalSpent}</TableCell>
+                      <TableCell className="text-slate-900 dark:text-white font-medium">{formatCurrency(user.totalSpent)}</TableCell>
                       <TableCell className="text-slate-600 dark:text-slate-400">{user.lastSeen}</TableCell>
                       <TableCell>
                         <DropdownMenu>
@@ -194,7 +196,7 @@ const UserManagement = () => {
                             <DropdownMenuItem
                               className="text-destructive"
                               onClick={() => {
-                                if (confirm("Are you sure you want to delete this user? This action cannot be undone.")) {
+                                if (confirm(MESSAGES.CONFIRMATIONS.DELETE_USER)) {
                                   handleUserAction(user.id, "delete")
                                 }
                               }}

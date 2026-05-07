@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
 import { Wifi } from "lucide-react"
-import { SystemSettings } from "@/types/settings"
+import { SystemSettings } from "@/lib/api"
 
 interface NetworkSettingsProps {
     settings: SystemSettings

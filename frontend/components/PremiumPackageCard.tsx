@@ -5,7 +5,7 @@ import { motion } from 'framer-motion'
 import { CheckCircle, Zap, Database, Clock } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { cn } from '@/lib/utils'
+import { cn, formatCurrency } from '@/lib/utils'
 
 export interface PackageOption {
   id: string | number
@@ -129,7 +129,7 @@ export const PremiumPackageCard = ({
           <div className="mb-6">
             <div className="flex items-baseline gap-1">
               <span className="text-3xl lg:text-4xl font-bold text-primary">
-                KSh {pkg.price.toLocaleString()}
+                {formatCurrency(pkg.price)}
               </span>
               {pkg.period && (
                 <span className="text-muted-foreground text-sm font-medium">
@@ -280,7 +280,7 @@ export const PackageComparisonTable = ({ packages }: { packages: PackageOption[]
                   {feature === 'Speed' && pkg.speed}
                   {feature === 'Data' && pkg.data}
                   {feature === 'Duration' && pkg.duration}
-                  {feature === 'Price' && `KSh ${pkg.price.toLocaleString()}`}
+                  {feature === 'Price' && formatCurrency(pkg.price)}
                 </td>
               ))}
             </tr>
