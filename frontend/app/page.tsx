@@ -41,7 +41,7 @@ function UserPortal() {
             Get Connected
           </h1>
           <p className="text-sm text-muted-foreground">
-            Instant WiFi access powered by M-Pesa.
+            Instant WiFi access.
           </p>
         </motion.div>
 
