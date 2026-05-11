@@ -8,7 +8,7 @@
  */
 
 require("dotenv").config();
-const { RouterOSClient } = require("node-routeros");
+const { RouterOSAPI } = require("node-routeros");
 const { logAudit } = require("../utils/auditLogger");
 const {
   validateMACFormat,
@@ -37,7 +37,7 @@ function getClient() {
   }
 
   try {
-    return new RouterOSClient({
+    return new RouterOSAPI({
       host,
       user,
       password,
@@ -317,7 +317,6 @@ async function getStatus() {
 }
 
 module.exports = {
-  RouterOSClient,
   whitelistMAC,
   disconnectByMac,
   disconnectAllUsers,

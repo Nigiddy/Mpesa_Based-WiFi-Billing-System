@@ -1,8 +1,7 @@
 // API configuration optimized for Node.js/Express backend
-if (!process.env.NEXT_PUBLIC_API_URL) {
-  
-}
-export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL
+// When NEXT_PUBLIC_API_URL is not set, fall back to a relative path so
+// same-app Next.js API routes work correctly.
+export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? ""
 
 export interface AdminSession {
   id: string
@@ -179,32 +178,57 @@ class ApiClient {
       })
 
       const onUnauthorized = config.onUnauthorized ?? "event"
+      const contentType = response.headers.get("content-type") || ""
+      const responseText = await response.text()
+      const isHtml = contentType.includes("text/html") || responseText.trim().startsWith("<")
+      let data: any = null
+
+      if (!isHtml && responseText) {
+        try {
+          data = JSON.parse(responseText)
+        } catch {
+          data = null
+        }
+      }
 
       // ✅ Handle 401 Unauthorized - auto logout when appropriate
       if (response.status === 401) {
         this.csrfToken = null
-        const data = await response.json().catch(() => null)
         const errorMessage =
           data?.message || data?.error || "Session expired. Please login again."
 
         if (onUnauthorized === "event" && typeof window !== 'undefined') {
           window.dispatchEvent(new CustomEvent('auth:unauthorized', { detail: { redirectTo: '/admin/login' } }))
         }
+
         return {
           success: false,
           error: errorMessage,
         }
       }
 
-      const data = await response.json()
-
       if (!response.ok) {
-        throw new Error(data.message || data.error || "API request failed")
+        console.warn("API request failed", {
+          url: response.url,
+          status: response.status,
+          statusText: response.statusText,
+          body: responseText.slice(0, 500),
+        })
+
+        if (isHtml) {
+          throw new Error(`API returned HTML at ${response.url} with status ${response.status}. This usually means the request hit a redirect or login page instead of JSON.`)
+        }
+
+        throw new Error(data?.message || data?.error || `API request failed: ${response.status} ${response.statusText}`)
       }
 
-      return data
+      if (isHtml) {
+        throw new Error(`Expected JSON from ${response.url} but received HTML. Check the API endpoint and authentication state.`)
+      }
+
+      return data ?? { success: false, error: "Empty response from API" }
     } catch (error) {
-      console.error("API Error:", error)
+      console.warn("API Error:", error)
       return {
         success: false,
         error: error instanceof Error ? error.message : "Unknown error occurred",

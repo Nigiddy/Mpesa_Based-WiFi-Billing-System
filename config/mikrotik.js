@@ -12,7 +12,7 @@
  */
 
 require("dotenv").config();
-const { RouterOSClient } = require("node-routeros");
+const { RouterOSAPI } = require("node-routeros");
 const { logAudit } = require("../utils/auditLogger");
 
 const MIKROTIK_ENABLED =
@@ -68,7 +68,7 @@ function getClient() {
   }
 
   try {
-    return new RouterOSClient({
+    return new RouterOSAPI({
       host,
       user,
       password,
@@ -400,7 +400,6 @@ async function getStatus() {
 }
 
 module.exports = {
-  RouterOSClient,
   MIKROTIK_ENABLED,
   validateMACFormat,
   ensureHotspotProfiles,
