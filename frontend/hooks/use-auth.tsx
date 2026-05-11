@@ -44,9 +44,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const handleUnauthorized = (event: Event) => {
       setAuthState({ isAuthenticated: false, admin: null, loading: false })
       apiClient.setCsrfToken(null)
-      if (typeof window !== "undefined") {
-        localStorage.removeItem("admin_token")
-      }
     }
 
     if (typeof window !== 'undefined') {
@@ -75,9 +72,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = async () => {
     // ✅ Clear CSRF token on logout for security
     apiClient.setCsrfToken(null)
-    if (typeof window !== "undefined") {
-      localStorage.removeItem("admin_token")
-    }
     await apiClient.logout()
     setAuthState({ isAuthenticated: false, admin: null, loading: false })
   }
