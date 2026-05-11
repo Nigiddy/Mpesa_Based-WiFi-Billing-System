@@ -9,12 +9,8 @@ const footerLinks = {
   "Support": [
     { title: "Contact Us", href: "/support" },
     { title: "Help Center", href: "/support#help" },
-    { title: "Terms of Service", href: "/support#terms" },
   ],
-  "Legal": [
-    { title: "Privacy Policy", href: "/support#privacy" },
-    { title: "Cookie Policy", href: "/support#cookies" },
-  ],
+
 }
 
 export function Footer() {
@@ -57,7 +53,7 @@ export function Footer() {
           </p>
           <div className="flex items-center space-x-4 mt-4 sm:mt-0">
             <p className="text-sm text-muted-foreground">
-              Powered by M-Pesa
+              Powered by M-cheda
             </p>
           </div>
         </div>
