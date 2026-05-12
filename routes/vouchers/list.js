@@ -8,11 +8,27 @@
  */
 
 const express = require('express');
+const { Prisma } = require('@prisma/client');
 const prisma = require('../../config/prismaClient');
 const authMiddleware = require('../../middleware/authMiddleware');
 const { deriveVoucherStatus } = require('./helpers');
 
 const router = express.Router();
+
+function isSchemaInitializationError(error) {
+  const message = String(error?.message || '').toLowerCase();
+  return (
+    message.includes("doesn't exist") ||
+    message.includes('does not exist') ||
+    message.includes('unknown column') ||
+    message.includes('table') && message.includes('doesn') ||
+    (error instanceof Prisma.PrismaClientKnownRequestError && [
+      'P1001', // server closed the connection or database unavailable
+      'P1012', // migration not applied or relation missing
+      'P2025', // record not found or relation issue
+    ].includes(error.code))
+  );
+}
 
 router.get('/', authMiddleware, async (req, res) => {
   try {
@@ -44,6 +60,14 @@ router.get('/', authMiddleware, async (req, res) => {
     });
   } catch (error) {
     console.error('❌ /vouchers list error:', error);
+
+    if (isSchemaInitializationError(error)) {
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to fetch vouchers: database schema not initialized. Run Prisma migrations or prisma db push and ensure the Voucher tables exist.',
+      });
+    }
+
     return res.status(500).json({ success: false, error: 'Failed to fetch vouchers' });
   }
 });
