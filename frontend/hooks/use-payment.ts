@@ -74,7 +74,7 @@ export function usePayment() {
       const paymentPayload: PaymentRequest = {
         phone: `254${phone.substring(1)}`,
         amount,
-        package: selectedPackage.label,
+        package: selectedPackage.key,
         macAddress,
         speed: selectedPackage.speed,
       }
