@@ -24,9 +24,12 @@ function generateVoucherCode() {
  */
 function deriveVoucherStatus(voucher) {
   const now = new Date();
+  const currentUses = typeof voucher.currentUses === 'number' ? voucher.currentUses : 0;
+  const maxUses = typeof voucher.maxUses === 'number' ? voucher.maxUses : 1;
+
   if (voucher.expiresAt && now > voucher.expiresAt) return 'expired';
-  if (voucher.currentUses >= voucher.maxUses)        return 'fully_used';
-  if (voucher.currentUses === 0)                     return 'unused';
+  if (currentUses >= maxUses) return 'fully_used';
+  if (currentUses === 0) return 'unused';
   return 'active'; // partially used (maxUses > 1)
 }
 
