@@ -15,6 +15,34 @@ const { deriveVoucherStatus } = require('./helpers');
 
 const router = express.Router();
 
+function serializeBigInts(value) {
+  if (value === null || value === undefined) {
+    return value;
+  }
+
+  if (typeof value === 'bigint') {
+    return value.toString();
+  }
+
+  if (value instanceof Date) {
+    return value;
+  }
+
+  if (Array.isArray(value)) {
+    return value.map(serializeBigInts);
+  }
+
+  if (typeof value === 'object') {
+    const converted = {};
+    for (const key of Object.keys(value)) {
+      converted[key] = serializeBigInts(value[key]);
+    }
+    return converted;
+  }
+
+  return value;
+}
+
 function isSchemaInitializationError(error) {
   const message = String(error?.message || '').toLowerCase();
   return (
@@ -54,10 +82,10 @@ router.get('/', authMiddleware, async (req, res) => {
     const enriched = vouchers.map((v) => ({ ...v, status: deriveVoucherStatus(v) }));
     const filtered = statusFilter ? enriched.filter((v) => v.status === statusFilter) : enriched;
 
-    return res.json({
+    return res.json(serializeBigInts({
       success: true,
       data: { vouchers: filtered, total, page, totalPages: Math.ceil(total / limit) },
-    });
+    }));
   } catch (error) {
     console.error('❌ /vouchers list error:', error);
 
