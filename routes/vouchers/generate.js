@@ -18,6 +18,34 @@ const { generateVoucherCode, deriveVoucherStatus } = require('./helpers');
 
 const router = express.Router();
 
+function serializeBigInts(value) {
+  if (value === null || value === undefined) {
+    return value;
+  }
+
+  if (typeof value === 'bigint') {
+    return value.toString();
+  }
+
+  if (value instanceof Date) {
+    return value;
+  }
+
+  if (Array.isArray(value)) {
+    return value.map(serializeBigInts);
+  }
+
+  if (typeof value === 'object') {
+    const converted = {};
+    for (const key of Object.keys(value)) {
+      converted[key] = serializeBigInts(value[key]);
+    }
+    return converted;
+  }
+
+  return value;
+}
+
 router.post('/generate', authMiddleware, async (req, res) => {
   try {
     const {
@@ -61,11 +89,11 @@ router.post('/generate', authMiddleware, async (req, res) => {
 
     logAudit('vouchers_generated', { quantity: qty, planKey, maxUses: uses, expiresAt, admin: req.admin?.id });
 
-    return res.status(201).json({
+    return res.status(201).json(serializeBigInts({
       success: true,
       message: `${qty} voucher(s) generated`,
       data: created.map((v) => ({ ...v, status: deriveVoucherStatus(v) })),
-    });
+    }));
   } catch (error) {
     console.error('❌ /vouchers/generate error:', error);
     return res.status(500).json({ success: false, error: 'Failed to generate vouchers' });
