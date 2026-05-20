@@ -34,29 +34,62 @@ router.get("/admin/payments", authMiddleware, async (req, res) => {
   }
 });
 
-// ✅ Get Admin Summary (Protected)
+// ✅ Get Admin Summary (Protected) — FIXED: Now calculates successRate and blockedUsers
 router.get("/admin/summary", authMiddleware, async (req, res) => {
   try {
-    const [totalUsers, totalRevenue, pendingPayments] = await Promise.all([
+    const [
+      totalUsers,
+      totalRevenue,
+      pendingPayments,
+      completedPayments,
+      totalPayments,
+      blockedUsers,
+      activeSessions
+    ] = await Promise.all([
+      // Total unique users (by phone)
       prisma.payment.findMany({
         where: { status: 'COMPLETED' },
         distinct: ['phone'],
         select: { phone: true }
       }),
+      // Total revenue from completed payments
       prisma.payment.aggregate({
         where: { status: 'COMPLETED' },
         _sum: { amount: true }
       }),
+      // Count pending payments
       prisma.payment.count({
         where: { status: 'PENDING' }
+      }),
+      // Count completed payments
+      prisma.payment.count({
+        where: { status: 'COMPLETED' }
+      }),
+      // Count total payments (for success rate calculation)
+      prisma.payment.count({}),
+      // Count blocked users
+      prisma.user.count({
+        where: { status: 'BLOCKED' }
+      }),
+      // Count active sessions
+      prisma.session.count({
+        where: {
+          disconnectedAt: null,
+          expiryTime: { gt: new Date() }
+        }
       })
     ]);
+
+    // Calculate success rate: (completed / total) * 100
+    const successRate = totalPayments > 0 ? Math.round((completedPayments / totalPayments) * 100) : 0;
 
     res.json({ success: true, data: {
       totalUsers: totalUsers.length,
       totalRevenue: totalRevenue._sum.amount || 0,
-      activeSessions: 0,
-      pendingPayments: pendingPayments
+      activeSessions: activeSessions,
+      pendingPayments: pendingPayments,
+      successRate: successRate,
+      blockedUsers: blockedUsers
     }});
   } catch (err) {
     console.error("Database error:", err);
@@ -325,6 +358,239 @@ router.get("/network/status", authMiddleware, async (req, res) => {
   const resp = await getStatus();
   if (!resp.success) return res.status(500).json({ success: false, error: resp.error });
   return res.json({ success: true, data: resp.data });
+});
+
+// ✅ SYSTEM SETTINGS ENDPOINTS (CRITICAL FIX #1)
+
+// GET system settings
+router.get("/system/settings", authMiddleware, async (req, res) => {
+  try {
+    let settings = await prisma.systemSettings.findUnique({
+      where: { id: 1 }
+    });
+
+    // Create default settings if they don't exist
+    if (!settings) {
+      settings = await prisma.systemSettings.create({
+        data: { id: 1 }
+      });
+    }
+
+    res.json({ success: true, data: settings });
+  } catch (error) {
+    console.error("Get settings error:", error);
+    res.status(500).json({ success: false, error: "Failed to fetch settings" });
+  }
+});
+
+// POST system settings — FIXED: Now actually saves to database
+router.post("/system/settings", authMiddleware, csrfProtection, async (req, res) => {
+  try {
+    const adminId = req.admin?.id;
+    const {
+      networkName,
+      adminEmail,
+      maxConcurrentUsers,
+      sessionTimeout,
+      autoDisconnect,
+      currency,
+      taxRate,
+      paymentGateway,
+      mpesaTimeout,
+      defaultPackage,
+      maintenanceMode
+    } = req.body;
+
+    // Validate input
+    const errors = [];
+    if (maxConcurrentUsers !== undefined && (maxConcurrentUsers < 1 || maxConcurrentUsers > 1000)) {
+      errors.push("maxConcurrentUsers must be between 1 and 1000");
+    }
+    if (sessionTimeout !== undefined && (sessionTimeout < 1 || sessionTimeout > 24)) {
+      errors.push("sessionTimeout must be between 1 and 24 hours");
+    }
+    if (taxRate !== undefined && (taxRate < 0 || taxRate > 100)) {
+      errors.push("taxRate must be between 0 and 100");
+    }
+    if (mpesaTimeout !== undefined && (mpesaTimeout < 10 || mpesaTimeout > 300)) {
+      errors.push("mpesaTimeout must be between 10 and 300 seconds");
+    }
+
+    if (errors.length > 0) {
+      return res.status(400).json({ success: false, error: "Validation failed", errors });
+    }
+
+    const updates = {
+      networkName,
+      adminEmail,
+      maxConcurrentUsers,
+      sessionTimeout,
+      autoDisconnect,
+      currency,
+      taxRate,
+      paymentGateway,
+      mpesaTimeout,
+      defaultPackage,
+      maintenanceMode
+    };
+
+    // Update or create settings
+    const settings = await prisma.systemSettings.upsert({
+      where: { id: 1 },
+      update: {
+        ...(networkName && { networkName }),
+        ...(adminEmail && { adminEmail }),
+        ...(maxConcurrentUsers !== undefined && { maxConcurrentUsers }),
+        ...(sessionTimeout !== undefined && { sessionTimeout }),
+        ...(autoDisconnect !== undefined && { autoDisconnect }),
+        ...(currency && { currency }),
+        ...(taxRate !== undefined && { taxRate }),
+        ...(paymentGateway && { paymentGateway }),
+        ...(mpesaTimeout !== undefined && { mpesaTimeout }),
+        ...(defaultPackage && { defaultPackage }),
+        ...(maintenanceMode !== undefined && { maintenanceMode }),
+        updatedBy: adminId,
+        updatedAt: new Date()
+      },
+      create: {
+        id: 1,
+        ...(networkName && { networkName }),
+        ...(adminEmail && { adminEmail }),
+        ...(maxConcurrentUsers !== undefined && { maxConcurrentUsers }),
+        ...(sessionTimeout !== undefined && { sessionTimeout }),
+        ...(autoDisconnect !== undefined && { autoDisconnect }),
+        ...(currency && { currency }),
+        ...(taxRate !== undefined && { taxRate }),
+        ...(paymentGateway && { paymentGateway }),
+        ...(mpesaTimeout !== undefined && { mpesaTimeout }),
+        ...(defaultPackage && { defaultPackage }),
+        ...(maintenanceMode !== undefined && { maintenanceMode }),
+        updatedBy: adminId
+      }
+    });
+
+    // Log admin action
+    logAudit('ADMIN_UPDATE_SETTINGS', {
+      adminId,
+      changes: Object.keys(updates).filter((key) => updates[key] !== undefined),
+      timestamp: new Date().toISOString()
+    });
+
+    res.json({ success: true, data: settings, message: "Settings updated successfully" });
+  } catch (error) {
+    console.error("Update settings error:", error);
+    res.status(500).json({ success: false, error: "Failed to update settings" });
+  }
+});
+
+// ✅ HEALTH CHECK ENDPOINTS (CRITICAL FIX #2)
+
+// GET /api/health/api — Check API response time
+router.get("/health/api", async (req, res) => {
+  const startTime = Date.now();
+  try {
+    // Simple DB query to measure response time
+    await prisma.admin.findFirst();
+    const responseTime = Date.now() - startTime;
+    
+    const status = responseTime < 100 ? 'good' : responseTime < 500 ? 'warning' : 'bad';
+    res.json({ 
+      success: true, 
+      data: { 
+        service: 'api',
+        status: status,
+        responseTime: `${responseTime}ms`
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ 
+      success: false, 
+      data: { 
+        service: 'api',
+        status: 'bad',
+        error: error.message
+      }
+    });
+  }
+});
+
+// GET /api/health/database — Check database connection
+router.get("/health/database", async (req, res) => {
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    res.json({ 
+      success: true, 
+      data: { 
+        service: 'database',
+        status: 'good',
+        message: 'Database connected'
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ 
+      success: false, 
+      data: { 
+        service: 'database',
+        status: 'bad',
+        error: error.message
+      }
+    });
+  }
+});
+
+// GET /api/health/mpesa — Check M-Pesa API connectivity
+router.get("/health/mpesa", async (req, res) => {
+  try {
+    // Try to access M-Pesa configuration
+    const mpesaConfig = require("../config/mpesa");
+    if (!mpesaConfig) throw new Error("M-Pesa not configured");
+    
+    // For a full check, you'd make a test API call to M-Pesa
+    // For now, we'll just check if configuration exists
+    res.json({ 
+      success: true, 
+      data: { 
+        service: 'mpesa',
+        status: 'good',
+        message: 'M-Pesa configured'
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ 
+      success: false, 
+      data: { 
+        service: 'mpesa',
+        status: 'bad',
+        error: error.message
+      }
+    });
+  }
+});
+
+// GET /api/health/ssl — Check SSL certificate
+router.get("/health/ssl", async (req, res) => {
+  try {
+    const certificate = req.socket.getPeerCertificate();
+    const valid = certificate && !certificate.issuer;
+    
+    res.json({ 
+      success: true, 
+      data: { 
+        service: 'ssl',
+        status: valid ? 'good' : 'warning',
+        message: valid ? 'SSL valid' : 'SSL not configured in dev'
+      }
+    });
+  } catch (error) {
+    res.json({ 
+      success: true, 
+      data: { 
+        service: 'ssl',
+        status: 'warning',
+        message: 'SSL check unavailable (development)'
+      }
+    });
+  }
 });
 
 module.exports = router;

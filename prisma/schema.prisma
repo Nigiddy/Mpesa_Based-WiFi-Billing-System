@@ -166,6 +166,31 @@ model SupportRequest {
   createdAt DateTime @default(now())
 }
 
+// ✅ System settings — singleton record (id is always 1)
+model SystemSettings {
+  id                    Int      @id @default(1)
+  
+  // Network settings
+  networkName           String   @default("Qonnect")
+  adminEmail            String   @default("admin@qonnect.com")
+  maxConcurrentUsers    Int      @default(100)
+  sessionTimeout        Int      @default(2) // in hours
+  autoDisconnect        Boolean  @default(true)
+  
+  // Payment settings
+  currency              String   @default("KSh")
+  taxRate               Float    @default(0)
+  paymentGateway        String   @default("mpesa")
+  mpesaTimeout          Int      @default(60) // in seconds
+  defaultPackage        String   @default("1hour")
+  
+  // System settings
+  maintenanceMode       Boolean  @default(false)
+  
+  updatedBy             Int?     // Admin ID who last updated
+  updatedAt             DateTime @updatedAt
+}
+
 // ✅ NEW: Audit log for critical actions
 model AuditLog {
   id        Int      @id @default(autoincrement())
