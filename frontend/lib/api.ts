@@ -399,19 +399,48 @@ class ApiClient {
       totalUsers: Number(data.totalUsers) || 0,
       activeUsers: Number(data.activeSessions) || 0,
       todayRevenue: Number(data.totalRevenue) || 0,
-      successRate: 0,
+      successRate: Number(data.successRate) || 0,  // ✅ FIXED: Now uses real calculation
       pendingPayments: Number(data.pendingPayments) || 0,
-      blockedUsers: 0,
+      blockedUsers: Number(data.blockedUsers) || 0,  // ✅ FIXED: Now uses real count
     }
     return { success: true, data: mapped }
   }
 
+  // ✅ FIXED: Get system settings from backend
   async getSystemSettings(): Promise<ApiResponse<SystemSettings>> {
-    return { success: true, data: { networkName: "Qonnect", adminEmail: "admin@qonnect.com", currency: "KSh", taxRate: 0, paymentGateway: "mpesa", maxConcurrentUsers: 100, sessionTimeout: 2, autoDisconnect: true, maintenanceMode: false, mpesaTimeout: 60, defaultPackage: "1hour" } }
+    return this.request<SystemSettings>("/api/system/settings")
   }
 
+  // ✅ FIXED: Update system settings with backend persistence
   async updateSystemSettings(settings: Partial<SystemSettings>): Promise<ApiResponse> {
-    return { success: true }
+    return this.request("/api/system/settings", {
+      method: "POST",
+      body: JSON.stringify(settings),
+    })
+  }
+
+  // ✅ NEW: Health check endpoints
+  async getHealthStatus() {
+    try {
+      const [apiHealth, dbHealth, mpesaHealth, sslHealth] = await Promise.all([
+        this.request("/api/health/api").catch(() => null),
+        this.request("/api/health/database").catch(() => null),
+        this.request("/api/health/mpesa").catch(() => null),
+        this.request("/api/health/ssl").catch(() => null),
+      ])
+
+      return {
+        success: true,
+        data: {
+          api: apiHealth?.data || { status: "unknown" },
+          database: dbHealth?.data || { status: "unknown" },
+          mpesa: mpesaHealth?.data || { status: "unknown" },
+          ssl: sslHealth?.data || { status: "unknown" },
+        },
+      }
+    } catch (error) {
+      return { success: false, error: "Failed to check health" }
+    }
   }
 
   async restartNetworkService(): Promise<ApiResponse> {

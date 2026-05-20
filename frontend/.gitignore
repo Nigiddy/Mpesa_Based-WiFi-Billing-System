@@ -25,3 +25,4 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+ADMIN_DASHBOARD_AUDIT_PHASE1.md
