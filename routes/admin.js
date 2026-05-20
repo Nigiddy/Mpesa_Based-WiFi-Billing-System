@@ -6,6 +6,13 @@ const { disconnectAllUsers, disconnectByMac, getActiveDevices, getStatus } = req
 const { csrfProtection, attachCSRFToken } = require("../middleware/csrfMiddleware");
 const { logAudit } = require("../utils/auditLogger");
 
+function formatCsvValue(value) {
+  if (value === null || value === undefined) return ""
+  const text = String(value)
+  const escaped = text.replace(/"/g, '""')
+  return `"${escaped}"`
+}
+
 // ✅ CSRF Token endpoint - GET CSRF token for admin requests
 router.get("/admin/csrf-token", authMiddleware, attachCSRFToken, (req, res) => {
   res.json({ 
@@ -94,6 +101,49 @@ router.get("/admin/summary", authMiddleware, async (req, res) => {
   } catch (err) {
     console.error("Database error:", err);
     res.status(500).json({ success: false, error: "Internal Server Error" });
+  }
+});
+
+// Users export endpoint
+router.get("/users/export/csv", authMiddleware, async (req, res) => {
+  try {
+    const users = await prisma.user.findMany({ orderBy: { createdAt: 'desc' } });
+    const header = [
+      'ID',
+      'Phone',
+      'MAC Address',
+      'Status',
+      'Total Spent',
+      'Sessions Count',
+      'Last Seen',
+      'Blocked Reason',
+      'Created At',
+      'Updated At',
+    ].join(',');
+
+    const rows = users.map((user) => [
+      formatCsvValue(user.id),
+      formatCsvValue(user.phone),
+      formatCsvValue(user.macAddress),
+      formatCsvValue(user.status),
+      formatCsvValue(user.totalSpent),
+      formatCsvValue(user.sessionsCount),
+      formatCsvValue(user.lastSeen ? user.lastSeen.toISOString() : ''),
+      formatCsvValue(user.blockedReason || ''),
+      formatCsvValue(user.createdAt.toISOString()),
+      formatCsvValue(user.updatedAt.toISOString()),
+    ].join(','));
+
+    const csv = [header, ...rows].join('\n');
+    const filename = `users_${new Date().toISOString().slice(0, 10)}.csv`;
+
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    logAudit('users_exported_csv', { count: users.length, admin: req.admin?.id });
+    return res.send(csv);
+  } catch (error) {
+    console.error('❌ /users/export/csv error:', error);
+    return res.status(500).json({ success: false, error: 'Failed to export users' });
   }
 });
 
@@ -233,6 +283,58 @@ router.delete("/users/:id", authMiddleware, csrfProtection, async (req, res) => 
 });
 
 // Transactions endpoints
+router.get("/transactions/export/csv", authMiddleware, async (req, res) => {
+  try {
+    const payments = await prisma.payment.findMany({ orderBy: { requestedAt: 'desc' } });
+    const header = [
+      'Transaction ID',
+      'Phone',
+      'Amount',
+      'Status',
+      'M-Pesa Reference',
+      'M-Pesa Receipt',
+      'MAC Address',
+      'IP Address',
+      'Requested At',
+      'Completed At',
+      'Refunded Amount',
+      'Refund Reason',
+      'Refunded At',
+      'Created At',
+      'Updated At',
+    ].join(',');
+
+    const rows = payments.map((payment) => [
+      formatCsvValue(payment.transactionId),
+      formatCsvValue(payment.phone),
+      formatCsvValue(payment.amount),
+      formatCsvValue(payment.status),
+      formatCsvValue(payment.mpesaRef || ''),
+      formatCsvValue(payment.mpesaReceipt || ''),
+      formatCsvValue(payment.macAddress),
+      formatCsvValue(payment.ipAddress || ''),
+      formatCsvValue(payment.requestedAt.toISOString()),
+      formatCsvValue(payment.completedAt ? payment.completedAt.toISOString() : ''),
+      formatCsvValue(payment.refundedAmount ?? ''),
+      formatCsvValue(payment.refundReason || ''),
+      formatCsvValue(payment.refundedAt ? payment.refundedAt.toISOString() : ''),
+      formatCsvValue(payment.createdAt.toISOString()),
+      formatCsvValue(payment.updatedAt.toISOString()),
+    ].join(','));
+
+    const csv = [header, ...rows].join('\n');
+    const filename = `transactions_${new Date().toISOString().slice(0, 10)}.csv`;
+
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    logAudit('transactions_exported_csv', { count: payments.length, admin: req.admin?.id });
+    return res.send(csv);
+  } catch (error) {
+    console.error('❌ /transactions/export/csv error:', error);
+    return res.status(500).json({ success: false, error: 'Failed to export transactions' });
+  }
+});
+
 router.get("/transactions", authMiddleware, async (req, res) => {
   try {
     const { search = "", status = "all", page = 1, limit = 10, startDate = null, endDate = null } = req.query;
@@ -309,7 +411,121 @@ router.post("/transactions/:transactionId/refund", authMiddleware, csrfProtectio
 });
 
 router.get("/transactions/:transactionId/receipt", authMiddleware, async (req, res) => {
-  return res.json({ success: false, error: "Receipt generation not implemented" });
+  try {
+    const { transactionId } = req.params;
+    const payment = await prisma.payment.findUnique({
+      where: { transactionId },
+      select: {
+        transactionId: true,
+      }
+    });
+
+    if (!payment) {
+      return res.status(404).json({ success: false, error: "Transaction not found" });
+    }
+
+    return res.json({
+      success: true,
+      data: {
+        receiptUrl: `/api/transactions/${encodeURIComponent(transactionId)}/receipt/download`
+      }
+    });
+  } catch (error) {
+    console.error("Receipt link error:", error);
+    return res.status(500).json({ success: false, error: "Failed to generate receipt URL" });
+  }
+});
+
+router.get("/transactions/:transactionId/receipt/download", authMiddleware, async (req, res) => {
+  try {
+    const { transactionId } = req.params;
+    const payment = await prisma.payment.findUnique({
+      where: { transactionId },
+      select: {
+        transactionId: true,
+        phone: true,
+        amount: true,
+        status: true,
+        mpesaRef: true,
+        mpesaReceipt: true,
+        macAddress: true,
+        ipAddress: true,
+        requestedAt: true,
+        completedAt: true,
+        refundedAmount: true,
+        refundReason: true,
+        refundedAt: true,
+        createdAt: true,
+      },
+    });
+
+    if (!payment) {
+      return res.status(404).send('<h1>Receipt not found</h1><p>The requested transaction does not exist.</p>');
+    }
+
+    const amountFormatted = new Intl.NumberFormat('en-KE', {
+      style: 'currency',
+      currency: 'KES'
+    }).format(payment.amount);
+
+    const requestedAt = payment.requestedAt.toLocaleString('en-GB', { timeZone: 'UTC' });
+    const completedAt = payment.completedAt ? payment.completedAt.toLocaleString('en-GB', { timeZone: 'UTC' }) : 'Pending';
+    const refundedAt = payment.refundedAt ? payment.refundedAt.toLocaleString('en-GB', { timeZone: 'UTC' }) : 'N/A';
+
+    const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Receipt ${payment.transactionId}</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 0; padding: 24px; background: #f8fafc; color: #111827; }
+    .receipt { max-width: 760px; margin: auto; background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 32px; }
+    .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
+    h1 { font-size: 24px; margin: 0; }
+    .tag { padding: 6px 12px; border-radius: 999px; background: #e0f2fe; color: #0369a1; text-transform: uppercase; font-size: 12px; letter-spacing: .05em; }
+    table { width: 100%; border-collapse: collapse; margin-top: 24px; }
+    td { padding: 10px 0; border-bottom: 1px solid #e5e7eb; }
+    .label { color: #6b7280; width: 200px; }
+    .value { font-weight: 600; }
+    .note { margin-top: 24px; color: #475569; font-size: 14px; }
+  </style>
+</head>
+<body>
+  <div class="receipt">
+    <div class="header">
+      <div>
+        <h1>Payment Receipt</h1>
+        <p>Transaction ID: <strong>${payment.transactionId}</strong></p>
+      </div>
+      <div class="tag">${payment.status}</div>
+    </div>
+    <table>
+      <tr><td class="label">Phone</td><td class="value">${payment.phone}</td></tr>
+      <tr><td class="label">Amount</td><td class="value">${amountFormatted}</td></tr>
+      <tr><td class="label">M-Pesa Reference</td><td class="value">${payment.mpesaRef || 'N/A'}</td></tr>
+      <tr><td class="label">M-Pesa Receipt</td><td class="value">${payment.mpesaReceipt || 'N/A'}</td></tr>
+      <tr><td class="label">MAC Address</td><td class="value">${payment.macAddress}</td></tr>
+      <tr><td class="label">IP Address</td><td class="value">${payment.ipAddress || 'N/A'}</td></tr>
+      <tr><td class="label">Requested At</td><td class="value">${requestedAt}</td></tr>
+      <tr><td class="label">Completed At</td><td class="value">${completedAt}</td></tr>
+      <tr><td class="label">Refunded Amount</td><td class="value">${payment.refundedAmount ?? 'N/A'}</td></tr>
+      <tr><td class="label">Refund Reason</td><td class="value">${payment.refundReason || 'N/A'}</td></tr>
+      <tr><td class="label">Refunded At</td><td class="value">${refundedAt}</td></tr>
+      <tr><td class="label">Receipt Generated</td><td class="value">${new Date().toLocaleString('en-GB', { timeZone: 'UTC' })}</td></tr>
+    </table>
+    <p class="note">This receipt is generated by the administrative dashboard. Please print or save this page for your records.</p>
+  </div>
+</body>
+</html>`;
+
+    res.setHeader('Content-Type', 'text/html');
+    res.setHeader('Content-Disposition', `inline; filename="receipt_${payment.transactionId}.html"`);
+    return res.send(html);
+  } catch (error) {
+    console.error('Receipt render error:', error);
+    return res.status(500).send('<h1>Unable to display receipt</h1><p>Server error occurred while generating the receipt.</p>');
+  }
 });
 
 // Support endpoints
