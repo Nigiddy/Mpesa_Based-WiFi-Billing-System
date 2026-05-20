@@ -24,12 +24,14 @@ export default function AdminDashboard() {
   useDynamicTitle("Admin Dashboard - Qonnect")
   const [activeTab, setActiveTab] = useState("overview")
   const [stats, setStats] = useState<SystemStats | null>(null)
+  const [healthStatus, setHealthStatus] = useState<any>(null)
   const [activityLog, setActivityLog] = useState<Array<any>>([])
   const [isLoading, setIsLoading] = useState(true)
   const { admin, logout } = useAuth()
 
   useEffect(() => {
     fetchStats()
+    fetchHealthStatus()
     wsClient.connect()
 
     const handleUserConnected = (event: CustomEvent) => {
@@ -58,8 +60,14 @@ export default function AdminDashboard() {
     window.addEventListener("user_connected", handleUserConnected as EventListener)
     window.addEventListener("user_disconnected", handleUserDisconnected as EventListener)
 
+    // Refresh health status every 30 seconds
+    const healthInterval = setInterval(() => {
+      fetchHealthStatus()
+    }, 30000)
+
     return () => {
       wsClient.disconnect()
+      clearInterval(healthInterval)
       window.removeEventListener("user_connected", handleUserConnected as EventListener)
       window.removeEventListener("user_disconnected", handleUserDisconnected as EventListener)
     }
@@ -74,6 +82,17 @@ export default function AdminDashboard() {
       toast.error("Failed to fetch system stats")
     } finally {
       setIsLoading(false)
+    }
+  }
+
+  const fetchHealthStatus = async () => {
+    try {
+      const response = await apiClient.getHealthStatus()
+      if (response.success) {
+        setHealthStatus(response.data)
+      }
+    } catch (error) {
+      console.error("Failed to fetch health status:", error)
     }
   }
 
@@ -189,16 +208,37 @@ export default function AdminDashboard() {
                   </CardHeader>
                   <CardContent>
                     <div className="space-y-0 divide-y divide-border/40">
-                      {[
-                        { label: "API Response", value: "142ms", status: "good" },
-                        { label: "Database", value: "Active", status: "good" },
-                        { label: "M-Pesa API", value: "Connected", status: "good" },
-                        { label: "SSL Status", value: "Valid", status: "good" },
-                      ].map((item, i) => (
+                      {(healthStatus ? [
+                        {
+                          label: "API Response",
+                          value: healthStatus.api?.responseTime || "Unknown",
+                          status: healthStatus.api?.status || "warning",
+                        },
+                        {
+                          label: "Database",
+                          value: healthStatus.database?.status || "Unknown",
+                          status: healthStatus.database?.status === "good" ? "good" : "warning",
+                        },
+                        {
+                          label: "M-Pesa API",
+                          value: healthStatus.mpesa?.status || "Unknown",
+                          status: healthStatus.mpesa?.status === "good" ? "good" : "warning",
+                        },
+                        {
+                          label: "SSL Status",
+                          value: healthStatus.ssl?.status || "Unknown",
+                          status: healthStatus.ssl?.status === "good" ? "good" : "warning",
+                        },
+                      ] : [
+                        { label: "API Response", value: "Loading…", status: "warning" },
+                        { label: "Database", value: "Loading…", status: "warning" },
+                        { label: "M-Pesa API", value: "Loading…", status: "warning" },
+                        { label: "SSL Status", value: "Loading…", status: "warning" },
+                      ]).map((item, i) => (
                         <div key={i} className="flex items-center justify-between py-3">
                           <span className="text-sm text-muted-foreground">{item.label}</span>
                           <div className="flex items-center gap-2">
-                            <div className={`w-2 h-2 rounded-full ${item.status === "good" ? "bg-green-500" : "bg-yellow-500"}`} />
+                            <div className={`w-2 h-2 rounded-full ${item.status === "good" ? "bg-green-500" : item.status === "warning" ? "bg-yellow-500" : "bg-red-500"}`} />
                             <span className="text-sm font-medium text-foreground">{item.value}</span>
                           </div>
                         </div>
