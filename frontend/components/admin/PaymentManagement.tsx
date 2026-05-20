@@ -99,7 +99,7 @@ const PaymentManagement = () => {
         <Button
           onClick={() => {
             toast.info("Exporting transaction data...", { duration: 2000 })
-            // TODO: Implement export functionality
+            apiClient.exportTransactionsCSV()
           }}
           className="bg-primary hover:bg-primary/90 text-primary-foreground"
         >

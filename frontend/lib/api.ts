@@ -362,7 +362,25 @@ class ApiClient {
   }
 
   async downloadReceipt(transactionId: string): Promise<ApiResponse<{ receiptUrl: string }>> {
-    return this.request(`/api/transactions/${transactionId}/receipt`)
+    const receiptUrl = `${API_BASE_URL}/api/transactions/${encodeURIComponent(transactionId)}/receipt/download`
+    if (typeof window !== "undefined") {
+      window.open(receiptUrl, "_blank")
+    }
+    return Promise.resolve({ success: true, data: { receiptUrl } })
+  }
+
+  exportUsersCSV(): void {
+    const url = `${API_BASE_URL}/api/users/export/csv`
+    if (typeof window !== "undefined") {
+      window.location.assign(url)
+    }
+  }
+
+  exportTransactionsCSV(): void {
+    const url = `${API_BASE_URL}/api/transactions/export/csv`
+    if (typeof window !== "undefined") {
+      window.location.assign(url)
+    }
   }
 
   // Support APIs
@@ -500,7 +518,9 @@ class ApiClient {
   /** Triggers a CSV file download in the browser */
   exportVouchersCSV(): void {
     const url = `${API_BASE_URL}/api/vouchers/export/csv`
-    window.location.assign(url)
+    if (typeof window !== "undefined") {
+      window.location.assign(url)
+    }
   }
 
   async redeemVoucher(code: string, macAddress: string): Promise<ApiResponse<VoucherRedemptionResult>> {

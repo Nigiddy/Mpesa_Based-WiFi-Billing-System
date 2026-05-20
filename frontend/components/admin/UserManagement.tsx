@@ -129,7 +129,7 @@ const UserManagement = () => {
         <Button
           onClick={() => {
             toast.info("Exporting user data...", { duration: 2000 })
-            // TODO: Implement export functionality
+            apiClient.exportUsersCSV()
           }}
           className="bg-primary hover:bg-primary/90 text-primary-foreground"
         >
