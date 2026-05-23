@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { GeistSans } from 'geist/font/sans'
 import { GeistMono } from 'geist/font/mono'
+import { Analytics } from "@vercel/analytics/next"
 import './globals.css'
 import { generateMetadata } from '@/lib/metadata'
 import { ThemeProvider } from '@/components/theme-provider'
@@ -40,6 +41,7 @@ export default function RootLayout({
           <Header />
           <main className="flex-grow">{children}</main>
           <Footer />
+          <Analytics />
         </ThemeProvider>
       </body>
     </html>
