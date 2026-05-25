@@ -13,13 +13,7 @@ const AdminHeader = ({ children, onMenuToggle }: AdminHeaderProps) => (
         
         {/* Left Section: Mobile Menu & Brand */}
         <div className="flex items-center space-x-3 sm:space-x-4">
-          <button
-            onClick={onMenuToggle}
-            className="rounded-lg p-2 text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-neutral-900 lg:hidden dark:text-neutral-400 dark:hover:bg-neutral-900 dark:hover:text-neutral-50"
-            aria-label="Toggle Sidebar"
-          >
-            <Menu className="h-5 w-5" />
-          </button>
+          
           
           
         </div>
