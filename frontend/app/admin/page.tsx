@@ -110,16 +110,7 @@ export default function AdminDashboard() {
 
   return (
     <div className="min-h-screen bg-background">
-      <AdminHeader>
-        {admin && (
-          <div className="flex items-center gap-4 ml-auto">
-            <span className="text-sm font-medium text-muted-foreground">{admin.email}</span>
-            <Button variant="secondary" size="sm" onClick={logout} className="h-8">
-              Logout
-            </Button>
-          </div>
-        )}
-      </AdminHeader>
+      <AdminHeader />
 
       <main className="container mx-auto px-4 sm:px-6 lg:px-8 py-10 max-w-7xl">
         
