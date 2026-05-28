@@ -88,7 +88,6 @@ const NotFound = () => {
 
           <p className="text-muted-foreground max-w-lg mx-auto leading-7">
             The page you requested doesn’t exist or may have moved.
-            Return to the portal dashboard and continue managing your network.
           </p>
 
           <div className="mt-5 inline-flex items-center rounded-full border px-4 py-2 text-sm text-muted-foreground">
@@ -121,7 +120,7 @@ const NotFound = () => {
           >
             <Link href="/">
               <Home className="mr-2 h-5 w-5" />
-              Portal Home
+              Home
             </Link>
           </Button>
         </motion.div>
