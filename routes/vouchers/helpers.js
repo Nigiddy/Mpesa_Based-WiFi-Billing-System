@@ -2,6 +2,7 @@
  * Voucher shared utilities
  * - generateVoucherCode()  – cryptographically random, non-guessable code
  * - deriveVoucherStatus()  – computes runtime status from DB fields
+ * - serializeBigInts()     – M-5 FIX: centralised here instead of duplicated in generate.js + list.js
  */
 
 const crypto = require('crypto');
@@ -33,4 +34,27 @@ function deriveVoucherStatus(voucher) {
   return 'active'; // partially used (maxUses > 1)
 }
 
-module.exports = { generateVoucherCode, deriveVoucherStatus };
+/**
+ * Recursively convert BigInt values to strings so the object is JSON-serialisable.
+ * Prisma returns BigInt for some aggregate/count fields; JSON.stringify does not
+ * handle BigInt natively and will throw without this transformation.
+ *
+ * M-5 FIX: Previously duplicated verbatim in generate.js and list.js.
+ * Now lives here as the single source of truth.
+ */
+function serializeBigInts(value) {
+  if (value === null || value === undefined) return value;
+  if (typeof value === 'bigint') return value.toString();
+  if (value instanceof Date) return value;
+  if (Array.isArray(value)) return value.map(serializeBigInts);
+  if (typeof value === 'object') {
+    const out = {};
+    for (const key of Object.keys(value)) {
+      out[key] = serializeBigInts(value[key]);
+    }
+    return out;
+  }
+  return value;
+}
+
+module.exports = { generateVoucherCode, deriveVoucherStatus, serializeBigInts };

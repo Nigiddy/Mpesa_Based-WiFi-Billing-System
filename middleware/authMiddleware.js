@@ -18,11 +18,10 @@ const authMiddleware = (req, res, next) => {
     }
 
     try {
+        // jwt.verify validates signature, expiry (exp claim), and token format in one call.
+        // L-1 FIX: Removed the manual decoded.exp check that was here previously —
+        // jwt.verify already throws TokenExpiredError before that code could ever run.
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
-
-        if (decoded.exp && Date.now() >= decoded.exp * 1000) {
-            return res.status(401).json({ error: "Token has expired." });
-        }
 
         if (decoded.role !== "admin") {
             return res.status(403).json({ error: "Admin access required." });

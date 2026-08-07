@@ -22,25 +22,15 @@ export function RequireAdmin({ children }: { children: React.ReactNode }) {
     }
   }, [isAuthenticated, loading, router, isLoginPage])
 
-  // ✅ Listen for 401 unauthorized events and redirect to login
-  useEffect(() => {
-    const handleUnauthorized = (event: Event) => {
-      if (!isLoginPage) {
-        router.push("/admin/login")
-      }
-    }
-
-    if (typeof window !== 'undefined') {
-      window.addEventListener('auth:unauthorized', handleUnauthorized)
-      return () => window.removeEventListener('auth:unauthorized', handleUnauthorized)
-    }
-  }, [router, isLoginPage])
+  // H-4 FIX: Removed the duplicate 'auth:unauthorized' event listener.
+  // AuthProvider already clears isAuthenticated on that event, which re-triggers
+  // the useEffect above to redirect. Two listeners caused concurrent router.push races.
 
   if (loading) {
     // Show loading spinner or nothing while checking auth
     return isLoginPage ? <>{children}</> : null
   }
-  
+
   if (!isAuthenticated && !isLoginPage) {
     return null
   }
