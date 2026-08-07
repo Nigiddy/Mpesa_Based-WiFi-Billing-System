@@ -55,14 +55,13 @@ app.use(helmet({
 
 // ✅ Configure CORS from env (dev + prod)
 const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN || process.env.NEXT_PUBLIC_APP_ORIGIN || "http://localhost:3000";
-app.use(
-  cors({
-    origin: FRONTEND_ORIGIN,
-    credentials: true,
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization", "X-CSRF-Token"],
-  })
-);
+const corsOptions = {
+  origin: FRONTEND_ORIGIN,
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization", "X-CSRF-Token"],
+};
+app.use(cors(corsOptions));
 
 // ✅ Serve captive portal static files
 // MikroTik Hotspot redirect should point to: http://<server>/portal
@@ -81,7 +80,7 @@ app.use(bodyParser.json({ limit: '10mb' }));
 app.use(bodyParser.urlencoded({ extended: true, limit: '10mb' }));
 
 // ✅ Handle OPTIONS preflight requests
-app.options("*", cors());
+app.options("*", cors(corsOptions));
 
 // Apply rate limiting to specific routes
 app.use("/auth", authLimiter);

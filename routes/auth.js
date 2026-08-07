@@ -1,10 +1,11 @@
 const express = require("express");
-const { authLimiter } = require("../middleware/rateLimit");
 const router = express.Router();
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const { logAudit } = require("../utils/auditLogger");
 const prisma = require("../config/prismaClient");
+const authMiddleware = require("../middleware/authMiddleware");
+const { csrfProtection } = require("../middleware/csrfMiddleware");
 require("dotenv").config();
 
 const SECRET_KEY = process.env.JWT_SECRET;
@@ -12,8 +13,10 @@ if (!SECRET_KEY) {
     throw new Error("Missing JWT_SECRET in environment variables");
 }
 
-// ✅ Admin Login Route with rate limiting
-router.post("/admin/login", authLimiter, async (req, res) => {
+// ✅ Admin Login Route
+// Rate limiting is applied globally via app.use("/auth", authLimiter) in index.js.
+// Do NOT add authLimiter here again — that would double-count every request (C-2 fix).
+router.post("/admin/login", async (req, res) => {
     try {
         const { email, password } = req.body;
 
@@ -70,32 +73,20 @@ router.post("/admin/login", authLimiter, async (req, res) => {
 });
 
 // ✅ Check Auth Status Route (verify if admin is logged in)
-router.get("/admin/me", async (req, res) => {
+// H-1 FIX: Reuses authMiddleware instead of duplicating JWT verification logic.
+router.get("/admin/me", authMiddleware, async (req, res) => {
     try {
-        const token = req.cookies.admin_token;
-        
-        if (!token) {
-            return res.status(401).json({ success: false, error: "Not authenticated" });
+        // req.admin is populated by authMiddleware after successful JWT verification
+        const admin = await prisma.admin.findUnique({
+            where: { id: req.admin.id },
+            select: { id: true, email: true }, // Never return the password hash
+        });
+
+        if (!admin) {
+            return res.status(401).json({ success: false, error: "Admin not found" });
         }
 
-        try {
-            const decoded = jwt.verify(token, SECRET_KEY);
-            if (decoded.role !== "admin") {
-                return res.status(401).json({ success: false, error: "Invalid or expired token" });
-            }
-            const admin = await prisma.admin.findUnique({ 
-                where: { id: decoded.id },
-                select: { id: true, email: true } // Don't return password
-            });
-
-            if (!admin) {
-                return res.status(401).json({ success: false, error: "Admin not found" });
-            }
-
-            res.json({ success: true, data: { admin } });
-        } catch (tokenError) {
-            return res.status(401).json({ success: false, error: "Invalid or expired token" });
-        }
+        res.json({ success: true, data: { admin } });
     } catch (error) {
         console.error("Auth Check Error:", error);
         res.status(500).json({ success: false, error: "Internal Server Error" });
@@ -103,7 +94,9 @@ router.get("/admin/me", async (req, res) => {
 });
 
 // ✅ Admin Logout Route
-router.post("/admin/logout", (req, res) => {
+// C-3a FIX: Added csrfProtection to prevent CSRF logout attacks.
+// The frontend must include the X-CSRF-Token header (already done via apiClient).
+router.post("/admin/logout", csrfProtection, (req, res) => {
     try {
         res.clearCookie('admin_token', {
             httpOnly: true,

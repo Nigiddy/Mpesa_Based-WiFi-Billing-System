@@ -11,37 +11,11 @@ const express = require('express');
 const { Prisma } = require('@prisma/client');
 const prisma = require('../../config/prismaClient');
 const authMiddleware = require('../../middleware/authMiddleware');
-const { deriveVoucherStatus } = require('./helpers');
+// M-5 FIX: serializeBigInts is now imported from the shared helpers module
+// instead of being duplicated here.
+const { deriveVoucherStatus, serializeBigInts } = require('./helpers');
 
 const router = express.Router();
-
-function serializeBigInts(value) {
-  if (value === null || value === undefined) {
-    return value;
-  }
-
-  if (typeof value === 'bigint') {
-    return value.toString();
-  }
-
-  if (value instanceof Date) {
-    return value;
-  }
-
-  if (Array.isArray(value)) {
-    return value.map(serializeBigInts);
-  }
-
-  if (typeof value === 'object') {
-    const converted = {};
-    for (const key of Object.keys(value)) {
-      converted[key] = serializeBigInts(value[key]);
-    }
-    return converted;
-  }
-
-  return value;
-}
 
 function isSchemaInitializationError(error) {
   const message = String(error?.message || '').toLowerCase();

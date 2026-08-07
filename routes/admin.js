@@ -13,10 +13,13 @@ function formatCsvValue(value) {
   return `"${escaped}"`
 }
 
-// ✅ CSRF Token endpoint - GET CSRF token for admin requests
-router.get("/admin/csrf-token", authMiddleware, attachCSRFToken, (req, res) => {
-  res.json({ 
-    success: true, 
+// ✅ CSRF Token endpoint — GET CSRF token for admin requests
+// C-3c FIX: Apply csrfProtection BEFORE attachCSRFToken.
+// csrfProtection (csurf) must run first so it sets the CSRF secret cookie;
+// only then can req.csrfToken() be called by attachCSRFToken.
+router.get("/admin/csrf-token", authMiddleware, csrfProtection, attachCSRFToken, (req, res) => {
+  res.json({
+    success: true,
     data: { token: req.csrfToken() },
     message: "CSRF token generated. Include in X-CSRF-Token header for mutations."
   });
@@ -529,7 +532,9 @@ router.get("/transactions/:transactionId/receipt/download", authMiddleware, asyn
 });
 
 // Support endpoints
-router.post("/support/contact", async (req, res) => {
+// C-3b FIX: /support/contact now requires authentication + CSRF before any
+// persistence is added, preventing future unauthenticated write vulnerabilities.
+router.post("/support/contact", authMiddleware, csrfProtection, async (req, res) => {
   // Persist to a support table if you add one. For now, accept and return success.
   return res.json({ success: true });
 });
@@ -702,26 +707,26 @@ router.post("/system/settings", authMiddleware, csrfProtection, async (req, res)
 // ✅ HEALTH CHECK ENDPOINTS (CRITICAL FIX #2)
 
 // GET /api/health/api — Check API response time
-router.get("/health/api", async (req, res) => {
+// H-5 FIX: Requires authentication so internal service info is not public.
+// L-6 FIX: Uses SELECT 1 instead of admin.findFirst() to avoid leaking admin table existence.
+router.get("/health/api", authMiddleware, async (req, res) => {
   const startTime = Date.now();
   try {
-    // Simple DB query to measure response time
-    await prisma.admin.findFirst();
+    await prisma.$queryRaw`SELECT 1`;
     const responseTime = Date.now() - startTime;
-    
     const status = responseTime < 100 ? 'good' : responseTime < 500 ? 'warning' : 'bad';
-    res.json({ 
-      success: true, 
-      data: { 
+    res.json({
+      success: true,
+      data: {
         service: 'api',
         status: status,
         responseTime: `${responseTime}ms`
       }
     });
   } catch (error) {
-    res.status(500).json({ 
-      success: false, 
-      data: { 
+    res.status(500).json({
+      success: false,
+      data: {
         service: 'api',
         status: 'bad',
         error: error.message
@@ -731,21 +736,22 @@ router.get("/health/api", async (req, res) => {
 });
 
 // GET /api/health/database — Check database connection
-router.get("/health/database", async (req, res) => {
+// H-5 FIX: Requires authentication.
+router.get("/health/database", authMiddleware, async (req, res) => {
   try {
     await prisma.$queryRaw`SELECT 1`;
-    res.json({ 
-      success: true, 
-      data: { 
+    res.json({
+      success: true,
+      data: {
         service: 'database',
         status: 'good',
         message: 'Database connected'
       }
     });
   } catch (error) {
-    res.status(500).json({ 
-      success: false, 
-      data: { 
+    res.status(500).json({
+      success: false,
+      data: {
         service: 'database',
         status: 'bad',
         error: error.message
@@ -755,26 +761,23 @@ router.get("/health/database", async (req, res) => {
 });
 
 // GET /api/health/mpesa — Check M-Pesa API connectivity
-router.get("/health/mpesa", async (req, res) => {
+// H-5 FIX: Requires authentication.
+router.get("/health/mpesa", authMiddleware, async (req, res) => {
   try {
-    // Try to access M-Pesa configuration
     const mpesaConfig = require("../config/mpesa");
     if (!mpesaConfig) throw new Error("M-Pesa not configured");
-    
-    // For a full check, you'd make a test API call to M-Pesa
-    // For now, we'll just check if configuration exists
-    res.json({ 
-      success: true, 
-      data: { 
+    res.json({
+      success: true,
+      data: {
         service: 'mpesa',
         status: 'good',
         message: 'M-Pesa configured'
       }
     });
   } catch (error) {
-    res.status(500).json({ 
-      success: false, 
-      data: { 
+    res.status(500).json({
+      success: false,
+      data: {
         service: 'mpesa',
         status: 'bad',
         error: error.message
@@ -784,23 +787,23 @@ router.get("/health/mpesa", async (req, res) => {
 });
 
 // GET /api/health/ssl — Check SSL certificate
-router.get("/health/ssl", async (req, res) => {
+// H-5 FIX: Requires authentication.
+router.get("/health/ssl", authMiddleware, async (req, res) => {
   try {
     const certificate = req.socket.getPeerCertificate();
     const valid = certificate && !certificate.issuer;
-    
-    res.json({ 
-      success: true, 
-      data: { 
+    res.json({
+      success: true,
+      data: {
         service: 'ssl',
         status: valid ? 'good' : 'warning',
         message: valid ? 'SSL valid' : 'SSL not configured in dev'
       }
     });
   } catch (error) {
-    res.json({ 
-      success: true, 
-      data: { 
+    res.json({
+      success: true,
+      data: {
         service: 'ssl',
         status: 'warning',
         message: 'SSL check unavailable (development)'
