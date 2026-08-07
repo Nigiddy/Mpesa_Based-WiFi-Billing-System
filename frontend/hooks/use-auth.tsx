@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, createContext, useContext, ReactNode } from 'react'
+import { useState, useEffect, createContext, useContext, ReactNode, useRef } from 'react'
 import { apiClient, AdminSession } from '@/lib/api'
 
 interface AuthContextType {
@@ -8,7 +8,8 @@ interface AuthContextType {
   admin: AdminSession | null
   loading: boolean
   login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>
-  logout: () => void
+  // H-3 FIX: typed as Promise<void> to match the async implementation
+  logout: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
@@ -20,8 +21,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     loading: true,
   })
 
+  const checkAuthInFlight = useRef(false)
+
   useEffect(() => {
     const checkAuth = async () => {
+      if (checkAuthInFlight.current) return;
+      checkAuthInFlight.current = true;
+      
       try {
         const response = await apiClient.checkAuthStatus()
         if (response.success && response.data?.admin) {
@@ -34,6 +40,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       } catch (error) {
         setAuthState({ isAuthenticated: false, admin: null, loading: false })
+      } finally {
+        checkAuthInFlight.current = false;
       }
     }
     checkAuth()
@@ -69,11 +77,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  const logout = async () => {
-    // ✅ Clear CSRF token on logout for security
+  // H-3 FIX: logout is now a proper async function that:
+  // 1. Always clears local state (even if the server call fails)
+  // 2. Logs server-side failures rather than silently ignoring them
+  // 3. Performs a hard redirect to flush all cached page/component state
+  const logout = async (): Promise<void> => {
+    // Clear CSRF token immediately so no mutations can fire during logout
     apiClient.setCsrfToken(null)
-    await apiClient.logout()
+
+    try {
+      await apiClient.logout()
+    } catch (error) {
+      // Server-side logout failed (network error, server down, etc.).
+      // The HttpOnly cookie will expire naturally, but we still clear local
+      // state so the user is treated as logged out in this session.
+      console.error('[Auth] Server-side logout failed — clearing local session anyway:', error)
+    }
+
     setAuthState({ isAuthenticated: false, admin: null, loading: false })
+
+    // Hard navigation ensures all cached admin data is flushed from memory.
+    // Use replace() so the dashboard page is not in the back-stack.
+    if (typeof window !== 'undefined') {
+      window.location.replace('/admin/login')
+    }
   }
 
   return (

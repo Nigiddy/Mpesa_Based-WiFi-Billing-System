@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -18,20 +18,15 @@ export default function AdminLogin() {
   const [password, setPassword] = useState("")
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
-  const [redirectTo, setRedirectTo] = useState("/admin")
-  
+  // M-2 FIX: useSearchParams() is hydration-aware — it reads the param
+  // synchronously on the initial render without needing a useEffect, preventing
+  // the brief window where redirectTo would default to '/admin' before updating.
+  const searchParams = useSearchParams()
+  const rawRedirect = searchParams.get("redirect")
+  const redirectTo = rawRedirect?.startsWith("/") ? rawRedirect : "/admin"
+
   const { login, isAuthenticated, loading: authLoading } = useAuth()
   const router = useRouter()
-
-  useEffect(() => {
-    if (typeof window === "undefined") return
-
-    const params = new URLSearchParams(window.location.search)
-    const redirect = params.get("redirect")
-    if (redirect?.startsWith("/")) {
-      setRedirectTo(redirect)
-    }
-  }, [])
 
   useEffect(() => {
     if (!authLoading && isAuthenticated) {
