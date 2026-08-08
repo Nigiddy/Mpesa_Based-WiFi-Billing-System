@@ -31,10 +31,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         const response = await apiClient.checkAuthStatus()
         if (response.success && response.data?.admin) {
-          setAuthState({ isAuthenticated: true, admin: response.data.admin, loading: false })
-          
-          // ✅ Fetch CSRF token for admin mutations
-          await apiClient.fetchCsrfToken()
+          const csrfToken = await apiClient.fetchCsrfToken()
+          if (csrfToken) {
+            setAuthState({ isAuthenticated: true, admin: response.data.admin, loading: false })
+          } else {
+            setAuthState({ isAuthenticated: false, admin: null, loading: false })
+          }
         } else {
           setAuthState({ isAuthenticated: false, admin: null, loading: false })
         }
@@ -64,15 +66,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const response = await apiClient.login(email, password)
       if (response.success && response.data?.admin) {
+        const csrfToken = await apiClient.fetchCsrfToken()
+        if (!csrfToken) {
+          setAuthState({ isAuthenticated: false, admin: null, loading: false })
+          return {
+            success: false,
+            error: "Login succeeded but failed to initialize a secure admin session. Please try again."
+          }
+        }
+
         setAuthState({ isAuthenticated: true, admin: response.data.admin, loading: false })
-        
-        // ✅ Fetch CSRF token after login
-        await apiClient.fetchCsrfToken()
-        
         return { success: true }
       }
+
+      setAuthState({ isAuthenticated: false, admin: null, loading: false })
       return { success: false, error: response.error }
     } catch (error) {
+      setAuthState({ isAuthenticated: false, admin: null, loading: false })
       return { success: false, error: error instanceof Error ? error.message : "Login failed" }
     }
   }

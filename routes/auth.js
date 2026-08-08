@@ -98,8 +98,8 @@ router.get("/admin/me", authMiddleware, async (req, res) => {
 
 // ✅ Admin Logout Route
 // C-3a FIX: Added csrfProtection to prevent CSRF logout attacks.
-// The frontend must include the X-CSRF-Token header (already done via apiClient).
-router.post("/admin/logout", csrfProtection, (req, res) => {
+// Also require authMiddleware so a valid admin session must exist.
+router.post("/admin/logout", authMiddleware, csrfProtection, (req, res) => {
     try {
         res.clearCookie('admin_token', {
             httpOnly: true,
