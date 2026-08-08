@@ -543,10 +543,32 @@ export class WebSocketClient {
   private reconnectAttempts = 0
   private maxReconnectAttempts = 5
   private reconnectInterval = 5000
+  // Holds the pending reconnect timer so it can be cancelled on intentional disconnect.
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null
+
+  /**
+   * Returns true only when the underlying socket is fully open.
+   * Use this before calling connect() to avoid creating duplicate sockets.
+   */
+  isConnected(): boolean {
+    return (
+      this.ws !== null &&
+      (this.ws.readyState === WebSocket.OPEN ||
+        this.ws.readyState === WebSocket.CONNECTING)
+    )
+  }
 
   connect(transactionId?: string) {
-    const baseUrl = API_BASE_URL ?? ''
-    const wsUrl = `${baseUrl.replace("http", "ws")}/ws${transactionId ? `/payments/${transactionId}` : ""}`
+    // Guard: do not create a second socket if one is already live or connecting.
+    if (this.isConnected()) return
+
+    // Build WebSocket URL.
+    // When API_BASE_URL is an empty string (relative-URL fallback) we derive
+    // the WS origin from window.location so the URL is valid.
+    const baseUrl = API_BASE_URL || (typeof window !== 'undefined'
+      ? `${window.location.protocol}//${window.location.host}`
+      : '')
+    const wsUrl = `${baseUrl.replace(/^http/, 'ws')}/ws${transactionId ? `/payments/${transactionId}` : ''}`
 
     try {
       this.ws = new WebSocket(wsUrl)
@@ -556,59 +578,76 @@ export class WebSocketClient {
       }
 
       this.ws.onmessage = (event) => {
-        const data = JSON.parse(event.data)
-        this.handleMessage(data)
+        try {
+          const data = JSON.parse(event.data)
+          this.handleMessage(data)
+        } catch {
+          // Ignore malformed frames
+        }
       }
 
       this.ws.onclose = () => {
-        this.reconnect()
+        // Only auto-reconnect if the socket was not closed intentionally
+        // (intentional disconnect sets this.ws to null first).
+        if (this.ws !== null) {
+          this.scheduleReconnect(transactionId)
+        }
       }
 
       this.ws.onerror = (error) => {
-        console.error("WebSocket error:", error)
+        // Log at warn level — a subsequent successful connection is normal and
+        // this keeps the console clean for the Strict Mode double-mount case.
+        console.warn('WebSocket error:', error)
       }
     } catch (error) {
-      console.error("Failed to connect WebSocket:", error)
+      console.error('Failed to connect WebSocket:', error)
     }
   }
 
   private handleMessage(data: WebSocketMessage) {
     // Emit custom events for different message types
-    if (data.type === "payment_status") {
+    if (data.type === 'payment_status') {
       window.dispatchEvent(
-        new CustomEvent("payment_status_update", {
-          detail: data.payload,
-        }),
+        new CustomEvent('payment_status_update', { detail: data.payload }),
       )
-    } else if (data.type === "user_connected") {
+    } else if (data.type === 'user_connected') {
       window.dispatchEvent(
-        new CustomEvent("user_connected", {
-          detail: data.payload,
-        }),
+        new CustomEvent('user_connected', { detail: data.payload }),
       )
-    } else if (data.type === "user_disconnected") {
+    } else if (data.type === 'user_disconnected') {
       window.dispatchEvent(
-        new CustomEvent("user_disconnected", {
-          detail: data.payload,
-        }),
+        new CustomEvent('user_disconnected', { detail: data.payload }),
       )
     }
   }
 
-  private reconnect() {
-    if (this.reconnectAttempts < this.maxReconnectAttempts) {
-      this.reconnectAttempts++
-      setTimeout(() => {
-        this.connect()
-      }, this.reconnectInterval)
-    }
+  private scheduleReconnect(transactionId?: string) {
+    if (this.reconnectAttempts >= this.maxReconnectAttempts) return
+    this.reconnectAttempts++
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null
+      this.connect(transactionId)
+    }, this.reconnectInterval)
   }
 
+  /**
+   * Intentional disconnect. Cancels any pending reconnect and closes the socket.
+   * After this call, the onclose handler will NOT trigger a reconnect.
+   */
   disconnect() {
-    if (this.ws) {
-      this.ws.close()
-      this.ws = null
+    // Cancel any pending reconnect timer before we close.
+    if (this.reconnectTimer !== null) {
+      clearTimeout(this.reconnectTimer)
+      this.reconnectTimer = null
     }
+    if (this.ws) {
+      // Null ws BEFORE calling .close() so the onclose handler can detect
+      // that this was intentional and skip the reconnect logic.
+      const socket = this.ws
+      this.ws = null
+      socket.close()
+    }
+    this.reconnectAttempts = 0
   }
 
   send(data: WebSocketMessage) {

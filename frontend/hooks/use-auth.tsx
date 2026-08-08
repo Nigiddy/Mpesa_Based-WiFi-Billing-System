@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, createContext, useContext, ReactNode, useRef } from 'react'
-import { apiClient, AdminSession } from '@/lib/api'
+import { apiClient, wsClient, AdminSession } from '@/lib/api'
 
 interface AuthContextType {
   isAuthenticated: boolean
@@ -82,6 +82,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // 2. Logs server-side failures rather than silently ignoring them
   // 3. Performs a hard redirect to flush all cached page/component state
   const logout = async (): Promise<void> => {
+    // Close the WebSocket FIRST — before clearing auth state or hitting the server.
+    // This ensures the socket is torn down cleanly while credentials are still valid.
+    wsClient.disconnect()
+
     // Clear CSRF token immediately so no mutations can fire during logout
     apiClient.setCsrfToken(null)
 

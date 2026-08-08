@@ -27,12 +27,18 @@ export default function AdminDashboard() {
   const [healthStatus, setHealthStatus] = useState<any>(null)
   const [activityLog, setActivityLog] = useState<Array<any>>([])
   const [isLoading, setIsLoading] = useState(true)
-  const { admin, logout } = useAuth()
+  const { admin, logout, isAuthenticated } = useAuth()
 
   useEffect(() => {
+    // Only initialize data fetching and WebSocket once the admin session is confirmed.
+    if (!isAuthenticated) return
+
     fetchStats()
     fetchHealthStatus()
-    wsClient.connect()
+    // Guard against double-connect (Strict Mode double-mount, tab navigation, etc.)
+    if (!wsClient.isConnected()) {
+      wsClient.connect()
+    }
 
     const handleUserConnected = (event: CustomEvent) => {
       toast.success(`${event.detail.phone} is now online`)
@@ -71,7 +77,7 @@ export default function AdminDashboard() {
       window.removeEventListener("user_connected", handleUserConnected as EventListener)
       window.removeEventListener("user_disconnected", handleUserDisconnected as EventListener)
     }
-  }, [])
+  }, [isAuthenticated])
 
   const fetchStats = async () => {
     try {

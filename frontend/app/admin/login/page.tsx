@@ -42,7 +42,8 @@ export default function AdminLogin() {
       const result = await login(email, password)
       if (result.success) {
         toast.success("Welcome back!")
-        router.replace(redirectTo)
+        // Navigation is handled by the useEffect below once isAuthenticated is set.
+        // Calling router.replace() here as well would create a duplicate history entry.
       } else {
         toast.error(result.error || "Invalid credentials. Please try again.")
       }
