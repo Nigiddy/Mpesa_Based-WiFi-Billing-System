@@ -57,7 +57,10 @@ router.post("/admin/login", async (req, res) => {
         res.cookie('admin_token', token, {
             httpOnly: true,
             secure: process.env.NODE_ENV === 'production',
-            sameSite: 'strict',
+            // 'lax' allows the cookie on top-level GET navigations (e.g., link from email)
+            // while still blocking cross-site POSTs. 'strict' breaks dashboard links
+            // from external sources even when the admin has a valid session.
+            sameSite: 'lax',
             maxAge: 60 * 60 * 1000 // 1 hour
         });
         // Send admin info in response
