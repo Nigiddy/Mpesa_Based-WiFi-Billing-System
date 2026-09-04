@@ -75,7 +75,8 @@ app.get('/portal', (req, res) => {
 });
 
 // ✅ Middleware
-app.use(cookieParser());
+// H-1 FIX: Pass COOKIE_SECRET to support signed cookies
+app.use(cookieParser(process.env.COOKIE_SECRET));
 app.use(bodyParser.json({ limit: '10mb' }));
 app.use(bodyParser.urlencoded({ extended: true, limit: '10mb' }));
 
@@ -154,6 +155,15 @@ app.get("/", async (req, res) => {
 });
 
 
+// ✅ 404 handler for unmatched routes
+app.use((req, res) => {
+  res.status(404).json({ success: false, error: 'Route not found' });
+});
+
+// ✅ CSRF error handler
+const { csrfErrorHandler } = require("./middleware/csrfMiddleware");
+app.use(csrfErrorHandler);
+
 // ✅ Global error handler
 app.use((err, req, res, next) => {
   console.error('Unhandled error:', err);
@@ -164,11 +174,6 @@ app.use((err, req, res, next) => {
     success: false,
     error: process.env.NODE_ENV === 'production' ? 'Internal server error' : err.message
   });
-});
-
-// ✅ 404 handler
-app.use((req, res) => {
-  res.status(404).json({ success: false, error: 'Route not found' });
 });
 
 // ✅ Start Server

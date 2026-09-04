@@ -3,7 +3,7 @@ const router = express.Router();
 const prisma = require("../config/prismaClient");
 const authMiddleware = require("../middleware/authMiddleware");
 const { disconnectAllUsers, disconnectByMac, getActiveDevices, getStatus } = require("../config/mikrotik");
-const { csrfProtection, attachCSRFToken } = require("../middleware/csrfMiddleware");
+const { csrfProtection, generateCsrfToken } = require("../middleware/csrfMiddleware");
 const { logAudit } = require("../utils/auditLogger");
 
 function formatCsvValue(value) {
@@ -14,13 +14,12 @@ function formatCsvValue(value) {
 }
 
 // ✅ CSRF Token endpoint — GET CSRF token for admin requests
-// C-3c FIX: Apply csrfProtection BEFORE attachCSRFToken.
-// csrfProtection (csurf) must run first so it sets the CSRF secret cookie;
-// only then can req.csrfToken() be called by attachCSRFToken.
-router.get("/admin/csrf-token", authMiddleware, csrfProtection, attachCSRFToken, (req, res) => {
+// Generates a CSRF token and sets the cookie via csrf-csrf
+router.get("/admin/csrf-token", authMiddleware, (req, res) => {
+  const token = generateCsrfToken(req, res);
   res.json({
     success: true,
-    data: { token: req.csrfToken() },
+    data: { token },
     message: "CSRF token generated. Include in X-CSRF-Token header for mutations."
   });
 });
@@ -371,35 +370,38 @@ router.get("/transactions", authMiddleware, async (req, res) => {
         { lte: new Date(endDate) };
     }
 
-    const pageNum = Number(page) || 1;
-    const per = Number(limit) || 10;
-
-    let transactions = await prisma.payment.findMany({
-      where,
-      select: {
-        id: true,
-        phone: true,
-        amount: true,
-        status: true,
-        requestedAt: true,
-        mpesaRef: true
-      },
-      orderBy: { requestedAt: 'desc' },
-      skip: (pageNum - 1) * per,
-      take: per
-    });
-
-    const total = await prisma.payment.count({ where });
-    
-    // Client-side search filtering
-    const q = String(search).toLowerCase();
-    if (q) {
-      transactions = transactions.filter((t) => 
-        t.phone.toLowerCase().includes(q) || 
-        String(t.id).toLowerCase().includes(q) || 
-        String(t.mpesaRef || '').toLowerCase().includes(q)
-      );
+    if (search && search.trim()) {
+      const q = search.trim();
+      where.OR = [
+        { phone: { contains: q } },
+        { mpesaRef: { contains: q } },
+        { mpesaReceipt: { contains: q } },
+        { transactionId: { contains: q } },
+      ];
     }
+
+    const pageNum = Number(page) || 1;
+    const per     = Math.min(Number(limit) || 10, 100); // cap at 100 to prevent abuse
+
+    const [transactions, total] = await Promise.all([
+      prisma.payment.findMany({
+        where,
+        select: {
+          id: true,
+          transactionId: true,
+          phone: true,
+          amount: true,
+          status: true,
+          requestedAt: true,
+          mpesaRef: true,
+          mpesaReceipt: true,
+        },
+        orderBy: { requestedAt: 'desc' },
+        skip: (pageNum - 1) * per,
+        take: per,
+      }),
+      prisma.payment.count({ where }),
+    ]);
 
     const totalPages = Math.max(1, Math.ceil(total / per));
     return res.json({ success: true, data: { transactions, total, page: pageNum, totalPages } });
