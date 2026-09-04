@@ -29,6 +29,11 @@ const REQUIRED_SECRETS = {
     pattern: /^mysql:\/\/.+/,
     description: 'MySQL connection string'
   },
+  COOKIE_SECRET: {
+    required: true,
+    minLength: 16,
+    description: 'Cookie signing secret (minimum 16 characters)'
+  },
   JWT_SECRET: {
     required: true,
     minLength: 32,
@@ -179,6 +184,23 @@ function validateSecrets() {
         'M-Pesa callbacks will not reach this server unless you use a tunnel (e.g. ngrok).'
       );
     }
+
+    // H-10 FIX: Detect temporary tunnels (ngrok, localtunnel, cloudflare tunnel dev URLs)
+    const TUNNEL_PATTERNS = [
+      'ngrok.io',
+      'ngrok-free.app',
+      'localtunnel.me',
+      'trycloudflare.com',
+    ];
+    const isTunnel = TUNNEL_PATTERNS.some((p) => callbackUrl.includes(p));
+
+    if (isTunnel && process.env.NODE_ENV === 'production') {
+      errors.push(
+        `❌ MPESA_CALLBACK_URL cannot use a temporary tunnel service ("${callbackUrl}") in production. Deploy on a permanent domain with a valid SSL certificate.`
+      );
+    } else if (isTunnel && process.env.NODE_ENV === 'development') {
+      console.log(`ℹ️  Development tunnel detected for M-Pesa callbacks: ${callbackUrl}`);
+    }
   }
 
   // Special validation for JWT_SECRET strength
@@ -228,6 +250,7 @@ function getSecrets() {
     port: process.env.PORT,
     frontendOrigin: process.env.FRONTEND_ORIGIN,
     databaseUrl: process.env.DATABASE_URL,
+    cookieSecret: process.env.COOKIE_SECRET,
     jwtSecret: process.env.JWT_SECRET,
     mpesaEnv: process.env.MPESA_ENV,
     mpesaConsumerKey: process.env.MPESA_CONSUMER_KEY,
@@ -252,6 +275,7 @@ function displaySecretsConfig() {
 
   const masked = {
     ...config,
+    cookieSecret: config.cookieSecret ? '***' + config.cookieSecret.slice(-4) : 'NOT SET',
     jwtSecret: config.jwtSecret ? '***' + config.jwtSecret.slice(-4) : 'NOT SET',
     mpesaConsumerSecret: config.mpesaConsumerSecret ? '***' : 'NOT SET',
     mpesaPasskey: config.mpesaPasskey ? '***' : 'NOT SET',

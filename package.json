@@ -4,7 +4,15 @@
   "main": "index.js",
   "scripts": {
     "dev": "nodemon index.js",
-    "start": "node index.js"
+    "start": "node index.js",
+    "pm2:start": "pm2 start ecosystem.config.js --env production",
+    "pm2:stop": "pm2 stop ecosystem.config.js",
+    "pm2:restart": "pm2 restart ecosystem.config.js --env production",
+    "pm2:logs": "pm2 logs"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
   },
   "keywords": [],
   "author": "niGiddy",
@@ -18,7 +26,7 @@
     "bullmq": "^5.8.2",
     "cookie-parser": "^1.4.6",
     "cors": "^2.8.5",
-    "csurf": "^1.11.0",
+    "csrf-csrf": "^4.0.3",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
     "express-rate-limit": "^7.2.0",
@@ -37,4 +45,3 @@
     "pino-pretty": "^11.0.0"
   }
 }
-

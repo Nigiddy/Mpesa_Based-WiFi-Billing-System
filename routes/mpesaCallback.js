@@ -11,6 +11,7 @@ const {
 const { validateCallbackStructure } = require("../validators/paymentValidator");
 const { paymentLimiter } = require("../middleware/rateLimit");
 const { logAudit } = require("../utils/auditLogger");
+const { sendPaymentStatus } = require("../services/websocket");
 
 const router = express.Router();
 
@@ -140,6 +141,14 @@ async function setupPaymentWorker() {
             data: { status: PaymentStatus.FAILED }
           });
 
+          sendPaymentStatus(payment.transactionId, {
+            transactionId: payment.transactionId,
+            checkoutId,
+            status: 'failed',
+            resultCode,
+            message: 'Payment declined or cancelled'
+          });
+
           logAudit('payment_failed', { checkoutId, resultCode });
           return { status: 'failed', resultCode };
         }
@@ -159,6 +168,13 @@ async function setupPaymentWorker() {
           await prisma.payment.update({
             where: { id: payment.id },
             data: { status: PaymentStatus.FRAUD_DETECTED }
+          });
+
+          sendPaymentStatus(payment.transactionId, {
+            transactionId: payment.transactionId,
+            checkoutId,
+            status: 'failed',
+            error: 'Fraud detected: amount mismatch'
           });
 
           logAudit('fraud_detected_amount_mismatch', {
@@ -316,6 +332,16 @@ async function setupPaymentWorker() {
 
         console.log(`✅ MAC whitelisted successfully`);
         logAudit('payment_mac_whitelist_success', { checkoutId, mac: payment.macAddress });
+
+        sendPaymentStatus(payment.transactionId, {
+          transactionId: payment.transactionId,
+          checkoutId,
+          status: 'completed',
+          phone: payment.phone,
+          amount: payment.amount,
+          expiresAt: sessionResult.expiresAt,
+          macAddress: payment.macAddress
+        });
 
         return {
           status: 'success',

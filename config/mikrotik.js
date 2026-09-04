@@ -60,11 +60,32 @@ function getClient() {
   const host = process.env.MIKROTIK_HOST;
   const user = process.env.MIKROTIK_USER;
   const password = process.env.MIKROTIK_PASSWORD;
-  const port = Number(process.env.MIKROTIK_PORT || 8728);
 
   if (!host || !user || !password) {
     console.error("❌ MikroTik: missing MIKROTIK_HOST / MIKROTIK_USER / MIKROTIK_PASSWORD");
     return null;
+  }
+
+  // H-5 FIX: Determine TLS configuration and automatically select matching RouterOS API port
+  const tlsEnv = process.env.MIKROTIK_USE_TLS;
+  const useTls = tlsEnv !== undefined
+    ? String(tlsEnv).toLowerCase() === "true"
+    : process.env.NODE_ENV === "production";
+
+  if (!useTls && process.env.NODE_ENV === "production") {
+    console.warn(
+      "⚠️  SECURITY WARNING: MikroTik TLS is DISABLED in production! " +
+      "Credentials and commands are transmitted unencrypted over the network. " +
+      "Enable MIKROTIK_USE_TLS=true and configure 'api-ssl' (port 8729) on RouterOS."
+    );
+  }
+
+  // Switch default port automatically: 8729 for TLS (api-ssl), 8728 for plaintext (api)
+  let port;
+  if (process.env.MIKROTIK_PORT) {
+    port = Number(process.env.MIKROTIK_PORT);
+  } else {
+    port = useTls ? 8729 : 8728;
   }
 
   try {
@@ -74,7 +95,7 @@ function getClient() {
       password,
       port,
       timeout: 10000,
-      tls: process.env.NODE_ENV === "production",
+      tls: useTls,
     });
   } catch (err) {
     console.error("❌ Failed to create RouterOS client:", err.message);
