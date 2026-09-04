@@ -5,14 +5,67 @@ const { PaymentStatus } = require('@prisma/client');
 const { disconnectByMac, whitelistMAC, getActiveMACSet, getActiveDevices } = require('../config/mikrotik');
 const { logAudit } = require('../utils/auditLogger');
 
-const connection = new Redis(process.env.REDIS_URL || 'redis://localhost:6379', {
-  maxRetriesPerRequest: null,
-});
+// ─── Lazy Redis connection ────────────────────────────────────────────────────
+// Created on first use so that a Redis outage at startup does NOT crash the
+// Express process. All queue getters return null when Redis is unavailable,
+// which the callers already handle gracefully (payments fall back to sync path).
+
+let _redisConnection = null;
+
+function getRedisConnection() {
+  if (_redisConnection) return _redisConnection;
+  try {
+    _redisConnection = new Redis(process.env.REDIS_URL || 'redis://localhost:6379', {
+      maxRetriesPerRequest: null,
+      // Fail fast on initial connect so callers see the error quickly
+      enableOfflineQueue: false,
+      lazyConnect: false,
+    });
+
+    _redisConnection.on('error', (err) => {
+      console.error('[Workers] Redis connection error:', err.message);
+    });
+
+    _redisConnection.on('connect', () => {
+      console.log('[Workers] Redis connected successfully');
+    });
+
+    return _redisConnection;
+  } catch (err) {
+    console.error('[Workers] Failed to create Redis connection:', err.message);
+    _redisConnection = null;
+    return null;
+  }
+}
+
+// ─── Queue factories ──────────────────────────────────────────────────────────
+// Each queue is created lazily the first time it is requested. Returns null
+// if Redis is not available, and callers skip the queue operation.
+
+let _paymentTimeoutQueue = null;
+let _sessionExpiryQueue = null;
+let _macWhitelistRetryQueue = null;
+let _sessionSyncQueue = null;
+
+function createQueue(name) {
+  const conn = getRedisConnection();
+  if (!conn) {
+    console.warn(`[Workers] Redis unavailable — queue '${name}' not created. Jobs will be skipped.`);
+    return null;
+  }
+  try {
+    return new Queue(name, { connection: conn });
+  } catch (err) {
+    console.error(`[Workers] Failed to create queue '${name}':`, err.message);
+    return null;
+  }
+}
 
 // --- Payment Timeout Worker ---
-const paymentTimeoutQueue = new Queue('payment-timeout', { connection });
+const paymentTimeoutQueue = (() => { try { _paymentTimeoutQueue = createQueue('payment-timeout'); return _paymentTimeoutQueue; } catch { return null; } })();
 
-const paymentTimeoutWorker = new Worker('payment-timeout', async (job) => {
+
+const paymentTimeoutWorker = paymentTimeoutQueue ? new Worker('payment-timeout', async (job) => {
   const { transactionId } = job.data;
   console.log(`⏱️ [Payment Timeout Worker] Checking transaction ${transactionId}`);
   try {
@@ -34,9 +87,9 @@ const paymentTimeoutWorker = new Worker('payment-timeout', async (job) => {
     logAudit('PAYMENT_TIMEOUT_WORKER_ERROR', { transactionId, error: error.message });
     throw error; // Re-throw to allow for retries
   }
-}, { connection });
+}, { connection: getRedisConnection() }) : null;
 
-paymentTimeoutWorker.on('failed', (job, error) => {
+paymentTimeoutWorker && paymentTimeoutWorker.on('failed', (job, error) => {
   console.error(`🚨 [Payment Timeout Worker] Job ${job.id} for transaction ${job.data.transactionId} failed permanently.`, error);
   logAudit('PAYMENT_TIMEOUT_WORKER_FAILURE', {
     jobId: job.id,
@@ -47,9 +100,9 @@ paymentTimeoutWorker.on('failed', (job, error) => {
 
 
 // --- Session Expiry Worker ---
-const sessionExpiryQueue = new Queue('session-expiry', { connection });
+const sessionExpiryQueue = (() => { try { _sessionExpiryQueue = createQueue('session-expiry'); return _sessionExpiryQueue; } catch { return null; } })();
 
-const sessionExpiryWorker = new Worker('session-expiry', async (job) => {
+const sessionExpiryWorker = sessionExpiryQueue ? new Worker('session-expiry', async (job) => {
   const { sessionId, macAddress } = job.data;
   console.log(`⏱️ [Session Expiry Worker] Expiring session ${sessionId} for MAC ${macAddress}`);
   try {
@@ -71,9 +124,9 @@ const sessionExpiryWorker = new Worker('session-expiry', async (job) => {
     logAudit('SESSION_EXPIRY_WORKER_ERROR', { sessionId, macAddress, error: error.message });
     throw error;
   }
-}, { connection });
+}, { connection: getRedisConnection() }) : null;
 
-sessionExpiryWorker.on('failed', (job, error) => {
+sessionExpiryWorker && sessionExpiryWorker.on('failed', (job, error) => {
   console.error(`🚨 [Session Expiry Worker] Job ${job.id} for MAC ${job.data.macAddress} failed permanently.`, error);
   logAudit('SESSION_EXPIRY_WORKER_FAILURE', {
     jobId: job.id,
@@ -85,9 +138,9 @@ sessionExpiryWorker.on('failed', (job, error) => {
 
 
 // --- MAC Whitelist Retry Worker ---
-const macWhitelistRetryQueue = new Queue('mac-whitelist-retry', { connection });
+const macWhitelistRetryQueue = (() => { try { _macWhitelistRetryQueue = createQueue('mac-whitelist-retry'); return _macWhitelistRetryQueue; } catch { return null; } })();
 
-const macWhitelistRetryWorker = new Worker('mac-whitelist-retry', async (job) => {
+const macWhitelistRetryWorker = macWhitelistRetryQueue ? new Worker('mac-whitelist-retry', async (job) => {
   const { paymentId, timeLabel } = job.data;
   console.log(`🔁 [MAC Retry Worker] Retrying whitelist for payment ${paymentId}`);
   try {
@@ -123,9 +176,9 @@ const macWhitelistRetryWorker = new Worker('mac-whitelist-retry', async (job) =>
     logAudit('MAC_WHITELIST_RETRY_ERROR', { paymentId, error: error.message });
     throw error;
   }
-}, { connection });
+}, { connection: getRedisConnection() }) : null;
 
-macWhitelistRetryWorker.on('failed', (job, error) => {
+macWhitelistRetryWorker && macWhitelistRetryWorker.on('failed', (job, error) => {
   console.error(`🚨 [MAC Retry Worker] Job ${job.id} for payment ${job.data.paymentId} failed permanently.`, error);
   logAudit('MAC_WHITELIST_RETRY_FAILURE', {
     jobId: job.id,
@@ -135,17 +188,20 @@ macWhitelistRetryWorker.on('failed', (job, error) => {
 });
 
 
-// --- Exporter ---
+// --- Exported getters (lazy queue creation on first call) ---
 function getPaymentTimeoutQueue() {
-  return paymentTimeoutQueue;
+  if (!_paymentTimeoutQueue) _paymentTimeoutQueue = createQueue('payment-timeout');
+  return _paymentTimeoutQueue;
 }
 
 function getSessionExpiryQueue() {
-  return sessionExpiryQueue;
+  if (!_sessionExpiryQueue) _sessionExpiryQueue = createQueue('session-expiry');
+  return _sessionExpiryQueue;
 }
 
 function getMacWhitelistRetryQueue() {
-  return macWhitelistRetryQueue;
+  if (!_macWhitelistRetryQueue) _macWhitelistRetryQueue = createQueue('mac-whitelist-retry');
+  return _macWhitelistRetryQueue;
 }
 
 // --- Session Sync Worker (Inactivity / Data Cap) ---
@@ -155,10 +211,14 @@ function getMacWhitelistRetryQueue() {
 // the router (kicked by idle-timeout or data cap) is marked disconnected.
 // Also enforces application-level data caps for extra safety.
 //
-const sessionSyncQueue = new Queue('session-sync', { connection });
+const sessionSyncQueue = (() => { try { _sessionSyncQueue = createQueue('session-sync'); return _sessionSyncQueue; } catch { return null; } })();
 
 // Schedule one repeatable sync job if not already scheduled
 (async () => {
+  if (!sessionSyncQueue) {
+    console.warn('[Session Sync] Redis unavailable — session sync disabled.');
+    return;
+  }
   try {
     const existing = await sessionSyncQueue.getRepeatableJobs();
     const alreadyScheduled = existing.some((j) => j.name === 'sync-sessions');
@@ -179,7 +239,7 @@ const sessionSyncQueue = new Queue('session-sync', { connection });
   }
 })();
 
-const sessionSyncWorker = new Worker(
+const sessionSyncWorker = sessionSyncQueue ? new Worker(
   'session-sync',
   async () => {
     console.log('[Session Sync] Running reconciliation...');
@@ -265,16 +325,17 @@ const sessionSyncWorker = new Worker(
       console.log('[Session Sync] All active DB sessions confirmed on MikroTik.');
     }
   },
-  { connection }
-);
+  { connection: getRedisConnection() }
+) : null;
 
-sessionSyncWorker.on('failed', (job, err) => {
+sessionSyncWorker && sessionSyncWorker.on('failed', (job, err) => {
   console.error('[Session Sync] Job failed:', err.message);
   logAudit('SESSION_SYNC_WORKER_FAILURE', { error: err.message });
 });
 
 function getSessionSyncQueue() {
-  return sessionSyncQueue;
+  if (!_sessionSyncQueue) _sessionSyncQueue = createQueue('session-sync');
+  return _sessionSyncQueue;
 }
 
 module.exports = {
