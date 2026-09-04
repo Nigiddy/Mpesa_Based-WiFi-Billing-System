@@ -233,24 +233,40 @@ router.post("/users/:id/disconnect", authMiddleware, csrfProtection, async (req,
   try {
     const { id } = req.params;
     const adminId = req.admin?.id;
-    const payment = await prisma.payment.findUnique({
+
+    // BUG FIX (C-6): :id is a User ID — must query prisma.user, not prisma.payment.
+    const user = await prisma.user.findUnique({
       where: { id: parseInt(id) },
       select: { macAddress: true }
     });
-    
-    if (!payment?.macAddress) {
-      return res.json({ success: true, message: "No MAC address found" });
+
+    if (!user?.macAddress) {
+      return res.status(404).json({ success: false, error: "User not found or has no MAC address on record" });
     }
-    
-    const resp = await disconnectByMac(payment.macAddress);
-    
-    // Log admin action
-    logAudit('ADMIN_DISCONNECT_USER', { 
-      adminId, 
-      paymentId: id, 
-      macAddress: payment.macAddress,
-      reason: 'Admin disconnect',
-      timestamp: new Date().toISOString() 
+
+    // Disconnect from MikroTik
+    const resp = await disconnectByMac(user.macAddress);
+
+    // BUG FIX (M-10): Close all open Session records for this MAC so the
+    // session-sync worker does not re-whitelist the device on the next cycle.
+    await prisma.session.updateMany({
+      where: {
+        macAddress: user.macAddress.toUpperCase(),
+        disconnectedAt: null,
+      },
+      data: {
+        disconnectedAt: new Date(),
+        reason: 'admin_force_disconnect',
+      },
+    });
+
+    logAudit('ADMIN_DISCONNECT_USER', {
+      adminId,
+      userId: id,
+      macAddress: user.macAddress,
+      mikrotikSuccess: resp.success,
+      reason: 'Admin force disconnect',
+      timestamp: new Date().toISOString()
     });
 
     return res.json({ success: resp.success, message: resp.message });

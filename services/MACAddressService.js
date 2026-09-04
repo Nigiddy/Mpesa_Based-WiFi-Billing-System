@@ -209,16 +209,41 @@ async function registerOrExtendMACSession(params, prismaClient = prisma) {
         action: 'extended',
       };
     } else {
-      // Create a new session
-      const user = await prismaClient.user.upsert({
-        where: { phone },
-        update: { lastSeen: new Date() },
-        create: {
-          phone,
-          macAddress: normalizedMAC,
-          status: 'ACTIVE',
-        },
-      });
+      // BUG FIX (C-8): The original upsert was a unique-constraint trap.
+      // User.macAddress is @unique. Three edge-cases must be handled:
+      //
+      //  a) Returning user, same device → update lastSeen + MAC (idempotent)
+      //  b) Returning user, new device  → update lastSeen + MAC (device changed)
+      //  c) New phone, MAC already linked to a different user → update that
+      //     user's phone (device handed off) rather than crashing
+      //
+      // We use a findFirst + update/create pattern inside the existing transaction
+      // (prismaClient here is already `tx` when called from within $transaction).
+
+      let user = await prismaClient.user.findUnique({ where: { phone } });
+
+      if (user) {
+        // Case a/b: Known phone — update MAC + lastSeen
+        user = await prismaClient.user.update({
+          where: { id: user.id },
+          data: { macAddress: normalizedMAC, lastSeen: new Date(), status: 'ACTIVE' },
+        });
+      } else {
+        // Check if the MAC is already registered to a different account
+        const macOwner = await prismaClient.user.findUnique({ where: { macAddress: normalizedMAC } });
+        if (macOwner) {
+          // Case c: Device transferred to a new phone — update the owner's phone number
+          user = await prismaClient.user.update({
+            where: { id: macOwner.id },
+            data: { phone, lastSeen: new Date(), status: 'ACTIVE' },
+          });
+        } else {
+          // Brand new user on a new device
+          user = await prismaClient.user.create({
+            data: { phone, macAddress: normalizedMAC, status: 'ACTIVE' },
+          });
+        }
+      }
 
       const newExpiryTime = new Date(Date.now() + expiryDuration);
       const newSession = await prismaClient.session.create({

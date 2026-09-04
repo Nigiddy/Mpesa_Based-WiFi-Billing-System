@@ -220,3 +220,29 @@ const gracefulShutdown = (signal) => {
 
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
+// ✅ H-9 FIX: Catch unhandled promise rejections and uncaught exceptions.
+// Node.js 15+ crashes on unhandledRejection without these handlers.
+// BullMQ worker errors, Redis disconnects, and MikroTik API failures can all
+// surface here if not caught at the call site.
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('🔴 Unhandled Promise Rejection:', reason);
+  try {
+    const { logAudit } = require('./utils/auditLogger');
+    logAudit('UNHANDLED_REJECTION', {
+      reason: reason instanceof Error ? reason.message : String(reason),
+      stack: reason instanceof Error ? reason.stack : undefined,
+    });
+  } catch { /* logger not available */ }
+  // Exit so PM2/systemd can restart — do NOT swallow and continue.
+  gracefulShutdown('UNHANDLED_REJECTION');
+});
+
+process.on('uncaughtException', (err) => {
+  console.error('🔴 Uncaught Exception:', err);
+  try {
+    const { logAudit } = require('./utils/auditLogger');
+    logAudit('UNCAUGHT_EXCEPTION', { error: err.message, stack: err.stack });
+  } catch { /* logger not available */ }
+  gracefulShutdown('UNCAUGHT_EXCEPTION');
+});

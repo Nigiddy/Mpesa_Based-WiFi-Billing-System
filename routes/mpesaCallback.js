@@ -231,12 +231,17 @@ async function setupPaymentWorker() {
               throw new Error(`Failed to register/extend session: ${sessionDetails.error}`);
             }
 
-            // Mark payment as completed within the same transaction
+            // Mark payment as completed within the same transaction.
+            // BUG FIX (C-7):
+            //   mpesaRef was created with CheckoutRequestID — do NOT overwrite it.
+            //   mpesaReceipt is the Safaricom receipt number (e.g. QGH12345678).
+            //   completedAt was also never being set — fix that here too.
             await tx.payment.update({
               where: { id: payment.id },
               data: {
                 status: PaymentStatus.COMPLETED,
-                mpesaRef: mpesaReceipt || checkoutId,
+                mpesaReceipt: mpesaReceipt || null,  // Safaricom receipt → correct field
+                completedAt: new Date(),              // Record actual completion timestamp
                 expiresAt: sessionDetails.expiresAt,
               },
             });
