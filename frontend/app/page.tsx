@@ -9,6 +9,7 @@ import { useDynamicTitle } from "@/hooks/use-dynamic-title"
 import { motion } from "framer-motion"
 import { packages } from "@/lib/packages"
 import { usePayment } from "@/hooks/use-payment"
+import { PaymentProcessingFlow } from "@/components/PaymentProcessingFlow"
 
 function UserPortal() {
   useDynamicTitle("Get Connected - KIBARUANI")
@@ -16,12 +17,40 @@ function UserPortal() {
   const {
     phone,
     amount,
+    status,
+    transactionId,
+    paymentData,
     isLoading,
     macAddress,
     handlePhoneChange,
     setAmount,
     handlePayment,
+    cancelPayment,
+    retryPayment,
   } = usePayment()
+
+  const selectedPackage = packages.find((pkg) => pkg.value === amount)
+  const paymentStage = status === "pending" ? "stk_sent" : status === "completed" ? "success" : status === "timeout" ? "timeout" : status === "failed" ? "failed" : null
+
+  if (paymentStage) {
+    return (
+      <div className="min-h-screen bg-background py-12 px-4 flex items-center justify-center">
+        <PaymentProcessingFlow
+          stage={paymentStage}
+          amount={amount}
+          phone={`254${phone.substring(1)}`}
+          package={selectedPackage?.label || "WiFi package"}
+          duration={selectedPackage?.label || "Selected package"}
+          transactionId={transactionId || undefined}
+          mpesaRef={paymentData?.mpesaRef}
+          expiresAt={paymentData?.expiresAt || undefined}
+          onRetry={retryPayment}
+          onCancel={cancelPayment}
+          onTimeout={cancelPayment}
+        />
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-screen bg-background py-20 flex items-center justify-center">

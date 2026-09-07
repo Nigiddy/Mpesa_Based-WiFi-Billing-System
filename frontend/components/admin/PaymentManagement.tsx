@@ -39,7 +39,6 @@ const PaymentManagement = () => {
         throw new Error(response.error || MESSAGES.ERRORS.FETCH_TRANSACTIONS)
       }
     } catch (error: unknown) {
-      console.error("Error fetching transactions:", error)
       toast.error(MESSAGES.ERRORS.FETCH_TRANSACTIONS, {
         description: error instanceof Error ? error.message : MESSAGES.ERRORS.UNKNOWN_ERROR,
       })

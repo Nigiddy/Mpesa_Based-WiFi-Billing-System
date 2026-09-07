@@ -148,7 +148,7 @@ export const StkSentView = ({
                   Resending...
                 </>
               ) : (
-                <>📱 Haven't Received? Resend</>
+                <>📱 Haven&apos;t Received? Resend</>
               )}
             </Button>
 
@@ -194,7 +194,7 @@ export const SuccessView = ({
           <CheckCircle className="w-10 h-10 text-white" />
         </motion.div>
         <h2 className="text-3xl font-bold mb-2">🎉 {MESSAGES.PAYMENT.SUCCESS}</h2>
-        <p className="text-success-100">You're now connected to the internet</p>
+        <p className="text-success-100">You&apos;re now connected to the internet</p>
       </div>
 
       <CardContent className="pt-8">
@@ -214,7 +214,7 @@ export const SuccessView = ({
 
           <Card variant="glass">
             <CardContent className="pt-6">
-              <h4 className="font-semibold mb-3">📌 What's Next?</h4>
+              <h4 className="font-semibold mb-3">📌 What&apos;s Next?</h4>
               <ul className="space-y-2 text-sm">
                 <li className="flex items-start gap-2">
                   <span className="text-success">✓</span>
@@ -222,7 +222,7 @@ export const SuccessView = ({
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-success">✓</span>
-                  <span>WiFi "{packageName}" appears in available networks</span>
+                  <span>WiFi &quot;{packageName}&quot; appears in available networks</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-success">✓</span>

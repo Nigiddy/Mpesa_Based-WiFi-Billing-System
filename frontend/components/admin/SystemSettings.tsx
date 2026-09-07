@@ -14,8 +14,6 @@ const SystemSettings = () => {
     saving,
     updateSetting,
     saveSettings,
-    restartNetworkService,
-    backupDatabase,
     disconnectAllUsers,
   } = useSystemSettings()
 
@@ -44,8 +42,6 @@ const SystemSettings = () => {
           saving={saving}
         />
         <QuickActions
-          onRestart={restartNetworkService}
-          onBackup={backupDatabase}
           onDisconnectAll={disconnectAllUsers}
         />
       </div>

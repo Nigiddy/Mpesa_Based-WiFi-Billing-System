@@ -1,7 +1,8 @@
 // API configuration optimized for Node.js/Express backend
 // When NEXT_PUBLIC_API_URL is not set, fall back to a relative path so
 // same-app Next.js API routes work correctly.
-export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? ""
+export const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL ?? "").replace(/\/$/, "")
+const API_REQUEST_TIMEOUT_MS = 15000
 
 export interface AdminSession {
   id: string
@@ -75,8 +76,8 @@ export interface PaymentRequest {
 export interface PaymentResponse {
   transactionId: string
   mpesaRef: string
-  status: "pending" | "completed" | "failed"
-  expiresAt: string
+  status: "pending" | "completed" | "failed" | "timeout" | "not_found"
+  expiresAt: string | null
 }
 
 export interface User {
@@ -171,11 +172,15 @@ class ApiClient {
         (headers as Record<string, string>)["X-CSRF-Token"] = this.csrfToken
       }
 
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), API_REQUEST_TIMEOUT_MS)
       const response = await fetch(`${API_BASE_URL}${endpoint}`, {
         credentials: 'include', // Send cookies with requests
         headers,
+        signal: options.signal || controller.signal,
         ...options,
       })
+      clearTimeout(timeoutId)
 
       const onUnauthorized = config.onUnauthorized ?? "event"
       const contentType = response.headers.get("content-type") || ""
@@ -208,30 +213,25 @@ class ApiClient {
       }
 
       if (!response.ok) {
-        console.warn("API request failed", {
-          url: response.url,
-          status: response.status,
-          statusText: response.statusText,
-          body: responseText.slice(0, 500),
-        })
-
         if (isHtml) {
-          throw new Error(`API returned HTML at ${response.url} with status ${response.status}. This usually means the request hit a redirect or login page instead of JSON.`)
+          throw new Error(`API returned an unexpected response (${response.status}). Check the API endpoint and authentication state.`)
         }
 
         throw new Error(data?.message || data?.error || `API request failed: ${response.status} ${response.statusText}`)
       }
 
       if (isHtml) {
-        throw new Error(`Expected JSON from ${response.url} but received HTML. Check the API endpoint and authentication state.`)
+        throw new Error("The API returned an unexpected response format.")
       }
 
       return data ?? { success: false, error: "Empty response from API" }
     } catch (error) {
-      console.warn("API Error:", error)
+      const message = error instanceof DOMException && error.name === "AbortError"
+        ? "The request timed out. Please try again."
+        : error instanceof Error ? error.message : "Unknown error occurred"
       return {
         success: false,
-        error: error instanceof Error ? error.message : "Unknown error occurred",
+        error: message,
       }
     }
   }
@@ -244,9 +244,7 @@ class ApiClient {
         this.csrfToken = response.data.token
         return this.csrfToken
       }
-    } catch (error) {
-      console.error("❌ Failed to fetch CSRF token:", error)
-    }
+    } catch { }
     return null
   }
 
@@ -281,7 +279,7 @@ class ApiClient {
   }
 
   async checkSessionStatus(macAddress: string): Promise<ApiResponse<{ hasActiveSession: boolean; expiresAt?: string }>> {
-    return this.request(`/api/session/status?mac=${macAddress}`);
+    return this.request(`/api/session/status?mac=${encodeURIComponent(macAddress)}`);
   }
 
   // Payment APIs
@@ -391,7 +389,10 @@ class ApiClient {
     subject: string
     message: string
   }): Promise<ApiResponse> {
-    return { success: false, error: "Support API is not implemented" }
+    return this.request("/api/support/contact", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }, { onUnauthorized: "silent" })
   }
 
   async getSupportRequests(params?: {
@@ -459,14 +460,6 @@ class ApiClient {
     } catch (error) {
       return { success: false, error: "Failed to check health" }
     }
-  }
-
-  async restartNetworkService(): Promise<ApiResponse> {
-    return { success: false, error: "Not implemented" }
-  }
-
-  async backupDatabase(): Promise<ApiResponse<{ backupFile: string }>> {
-    return { success: false, error: "Not implemented" }
   }
 
   async getSystemLogs(params?: { level?: string; limit?: number }): Promise<ApiResponse<SystemLog[]>> {
@@ -594,13 +587,11 @@ export class WebSocketClient {
         }
       }
 
-      this.ws.onerror = (error) => {
-        // Log at warn level — a subsequent successful connection is normal and
-        // this keeps the console clean for the Strict Mode double-mount case.
-        console.warn('WebSocket error:', error)
+      this.ws.onerror = () => {
+        // onclose handles reconnects without exposing socket details in browsers.
       }
-    } catch (error) {
-      console.error('Failed to connect WebSocket:', error)
+    } catch {
+      this.ws = null
     }
   }
 

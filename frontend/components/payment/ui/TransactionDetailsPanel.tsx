@@ -65,13 +65,13 @@ function DetailRow({
   }
 
   return (
-    <div className="flex justify-between items-center px-4 py-3 text-sm">
-      <span className="text-muted-foreground">{label}</span>
-      <div className="flex items-center gap-2">
+    <div className="flex flex-wrap justify-between items-center gap-2 px-4 py-3 text-sm">
+      <span className="text-muted-foreground shrink-0">{label}</span>
+      <div className="flex min-w-0 max-w-full items-center gap-2">
         <span
           className={`
             ${highlight ? 'font-bold text-primary text-base' : 'font-medium'}
-            ${monospace ? 'font-mono text-xs bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded' : ''}
+            ${monospace ? 'font-mono text-xs bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded break-all' : 'break-words'}
           `}
         >
           {value}

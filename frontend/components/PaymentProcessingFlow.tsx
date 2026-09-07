@@ -56,10 +56,9 @@ export const PaymentProcessingFlow = (props: PaymentProcessingProps) => {
     return () => clearInterval(timer)
   }, [stage, onTimeout])
 
-  const handleResend = async () => {
+  const handleResend = () => {
     setIsResending(true)
     try {
-      await new Promise((resolve) => setTimeout(resolve, 500)) // Simulate API call
       setLocalExpiresIn(stkExpiresIn)
       onResend?.()
     } finally {

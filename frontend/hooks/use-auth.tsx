@@ -101,11 +101,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     try {
       await apiClient.logout()
-    } catch (error) {
-      // Server-side logout failed (network error, server down, etc.).
-      // The HttpOnly cookie will expire naturally, but we still clear local
-      // state so the user is treated as logged out in this session.
-      console.error('[Auth] Server-side logout failed — clearing local session anyway:', error)
+    } catch {
+      // The HttpOnly cookie will expire naturally; local state is still cleared.
     }
 
     setAuthState({ isAuthenticated: false, admin: null, loading: false })

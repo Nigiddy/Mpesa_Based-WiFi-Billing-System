@@ -5,6 +5,7 @@ const authMiddleware = require("../middleware/authMiddleware");
 const { disconnectAllUsers, disconnectByMac, getActiveDevices, getStatus } = require("../config/mikrotik");
 const { csrfProtection, generateCsrfToken } = require("../middleware/csrfMiddleware");
 const { logAudit } = require("../utils/auditLogger");
+const { apiLimiter } = require("../middleware/rateLimit");
 
 function formatCsvValue(value) {
   if (value === null || value === undefined) return ""
@@ -13,7 +14,7 @@ function formatCsvValue(value) {
   return `"${escaped}"`
 }
 
-// ✅ CSRF Token endpoint — GET CSRF token for admin requests
+// âœ… CSRF Token endpoint â€” GET CSRF token for admin requests
 // Generates a CSRF token and sets the cookie via csrf-csrf
 router.get("/admin/csrf-token", authMiddleware, (req, res) => {
   const token = generateCsrfToken(req, res);
@@ -24,7 +25,7 @@ router.get("/admin/csrf-token", authMiddleware, (req, res) => {
   });
 });
 
-// ✅ Get All Payments for Admin Dashboard (Protected)
+// âœ… Get All Payments for Admin Dashboard (Protected)
 router.get("/admin/payments", authMiddleware, async (req, res) => {
   try {
     const payments = await prisma.payment.findMany({
@@ -43,7 +44,7 @@ router.get("/admin/payments", authMiddleware, async (req, res) => {
   }
 });
 
-// ✅ Get Admin Summary (Protected) — FIXED: Now calculates successRate and blockedUsers
+// âœ… Get Admin Summary (Protected) â€” FIXED: Now calculates successRate and blockedUsers
 router.get("/admin/summary", authMiddleware, async (req, res) => {
   try {
     const [
@@ -144,7 +145,7 @@ router.get("/users/export/csv", authMiddleware, async (req, res) => {
     logAudit('users_exported_csv', { count: users.length, admin: req.admin?.id });
     return res.send(csv);
   } catch (error) {
-    console.error('❌ /users/export/csv error:', error);
+    console.error('âŒ /users/export/csv error:', error);
     return res.status(500).json({ success: false, error: 'Failed to export users' });
   }
 });
@@ -190,10 +191,10 @@ router.post("/users/:id/block", authMiddleware, csrfProtection, async (req, res)
     });
 
     // Log admin action
-    logAudit('ADMIN_BLOCK_USER', { 
-      adminId, 
-      userId: id, 
-      timestamp: new Date().toISOString() 
+    logAudit('ADMIN_BLOCK_USER', {
+      adminId,
+      userId: id,
+      timestamp: new Date().toISOString()
     });
 
     res.json({ success: true, message: `User ${id} blocked` });
@@ -215,10 +216,10 @@ router.post("/users/:id/unblock", authMiddleware, csrfProtection, async (req, re
     });
 
     // Log admin action
-    logAudit('ADMIN_UNBLOCK_USER', { 
-      adminId, 
-      userId: id, 
-      timestamp: new Date().toISOString() 
+    logAudit('ADMIN_UNBLOCK_USER', {
+      adminId,
+      userId: id,
+      timestamp: new Date().toISOString()
     });
 
     res.json({ success: true, message: `User ${id} unblocked` });
@@ -233,7 +234,7 @@ router.post("/users/:id/disconnect", authMiddleware, csrfProtection, async (req,
     const { id } = req.params;
     const adminId = req.admin?.id;
 
-    // BUG FIX (C-6): :id is a User ID — must query prisma.user, not prisma.payment.
+    // BUG FIX (C-6): :id is a User ID â€” must query prisma.user, not prisma.payment.
     const user = await prisma.user.findUnique({
       where: { id: parseInt(id) },
       select: { macAddress: true }
@@ -287,10 +288,10 @@ router.delete("/users/:id", authMiddleware, csrfProtection, async (req, res) => 
     });
 
     // Log admin action
-    logAudit('ADMIN_DELETE_USER', { 
-      adminId, 
-      userId: id, 
-      timestamp: new Date().toISOString() 
+    logAudit('ADMIN_DELETE_USER', {
+      adminId,
+      userId: id,
+      timestamp: new Date().toISOString()
     });
 
     return res.json({ success: true, message: `User ${id} marked as inactive` });
@@ -348,7 +349,7 @@ router.get("/transactions/export/csv", authMiddleware, async (req, res) => {
     logAudit('transactions_exported_csv', { count: payments.length, admin: req.admin?.id });
     return res.send(csv);
   } catch (error) {
-    console.error('❌ /transactions/export/csv error:', error);
+    console.error('âŒ /transactions/export/csv error:', error);
     return res.status(500).json({ success: false, error: 'Failed to export transactions' });
   }
 });
@@ -356,7 +357,7 @@ router.get("/transactions/export/csv", authMiddleware, async (req, res) => {
 router.get("/transactions", authMiddleware, async (req, res) => {
   try {
     const { search = "", status = "all", page = 1, limit = 10, startDate = null, endDate = null } = req.query;
-    
+
     const where = {};
     if (status !== "all") {
       where.status = status;
@@ -365,8 +366,8 @@ router.get("/transactions", authMiddleware, async (req, res) => {
       where.requestedAt = { gte: new Date(startDate) };
     }
     if (endDate) {
-      where.requestedAt = where.requestedAt ? 
-        { ...where.requestedAt, lte: new Date(endDate) } : 
+      where.requestedAt = where.requestedAt ?
+        { ...where.requestedAt, lte: new Date(endDate) } :
         { lte: new Date(endDate) };
     }
 
@@ -417,10 +418,10 @@ router.post("/transactions/:transactionId/refund", authMiddleware, csrfProtectio
     const adminId = req.admin?.id;
 
     // Log refund attempt
-    logAudit('ADMIN_REQUEST_REFUND', { 
-      adminId, 
+    logAudit('ADMIN_REQUEST_REFUND', {
+      adminId,
       transactionId,
-      timestamp: new Date().toISOString() 
+      timestamp: new Date().toISOString()
     });
 
     // Placeholder: integrate real Mpesa reversal API if available
@@ -549,12 +550,27 @@ router.get("/transactions/:transactionId/receipt/download", authMiddleware, asyn
   }
 });
 
-// Support endpoints
-// C-3b FIX: /support/contact now requires authentication + CSRF before any
-// persistence is added, preventing future unauthenticated write vulnerabilities.
-router.post("/support/contact", authMiddleware, csrfProtection, async (req, res) => {
-  // Persist to a support table if you add one. For now, accept and return success.
-  return res.json({ success: true });
+// Public support contact endpoint. It is rate-limited and strictly validated
+// because visitors need to submit requests before they have an admin session.
+router.post("/support/contact", apiLimiter, async (req, res) => {
+  const { name, email, phone, subject, message } = req.body || {};
+  if (
+    typeof name !== "string" || name.trim().length < 2 || name.length > 100 ||
+    typeof email !== "string" || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254 ||
+    typeof phone !== "string" || !/^(?:0|254|\+254)7\d{8}$/.test(phone.replace(/[\s-]/g, "")) ||
+    typeof subject !== "string" || subject.trim().length < 2 || subject.length > 150 ||
+    typeof message !== "string" || message.trim().length < 10 || message.length > 5000
+  ) {
+    return res.status(400).json({ success: false, error: "Please provide valid support details." });
+  }
+
+  logAudit("support_request_received", {
+    name: name.trim(),
+    email: email.trim().toLowerCase(),
+    phone: phone.trim(),
+    subject: subject.trim(),
+  });
+  return res.status(202).json({ success: true, message: "Support request received." });
 });
 
 router.get("/support/requests", authMiddleware, async (req, res) => {
@@ -578,12 +594,12 @@ router.post("/network/disconnect-all", authMiddleware, csrfProtection, async (re
   try {
     const adminId = req.admin?.id;
     const resp = await disconnectAllUsers();
-    
+
     // Log admin action
-    logAudit('ADMIN_DISCONNECT_ALL_USERS', { 
+    logAudit('ADMIN_DISCONNECT_ALL_USERS', {
       adminId,
       affectedUsers: 'all',
-      timestamp: new Date().toISOString() 
+      timestamp: new Date().toISOString()
     });
 
     return res.json({ success: resp.success, message: resp.message });
@@ -599,7 +615,7 @@ router.get("/network/status", authMiddleware, async (req, res) => {
   return res.json({ success: true, data: resp.data });
 });
 
-// ✅ SYSTEM SETTINGS ENDPOINTS (CRITICAL FIX #1)
+// âœ… SYSTEM SETTINGS ENDPOINTS (CRITICAL FIX #1)
 
 // GET system settings
 router.get("/system/settings", authMiddleware, async (req, res) => {
@@ -622,7 +638,7 @@ router.get("/system/settings", authMiddleware, async (req, res) => {
   }
 });
 
-// POST system settings — FIXED: Now actually saves to database
+// POST system settings â€” FIXED: Now actually saves to database
 router.post("/system/settings", authMiddleware, csrfProtection, async (req, res) => {
   try {
     const adminId = req.admin?.id;
@@ -722,9 +738,9 @@ router.post("/system/settings", authMiddleware, csrfProtection, async (req, res)
   }
 });
 
-// ✅ HEALTH CHECK ENDPOINTS (CRITICAL FIX #2)
+// âœ… HEALTH CHECK ENDPOINTS (CRITICAL FIX #2)
 
-// GET /api/health/api — Check API response time
+// GET /api/health/api â€” Check API response time
 // H-5 FIX: Requires authentication so internal service info is not public.
 // L-6 FIX: Uses SELECT 1 instead of admin.findFirst() to avoid leaking admin table existence.
 router.get("/health/api", authMiddleware, async (req, res) => {
@@ -753,7 +769,7 @@ router.get("/health/api", authMiddleware, async (req, res) => {
   }
 });
 
-// GET /api/health/database — Check database connection
+// GET /api/health/database â€” Check database connection
 // H-5 FIX: Requires authentication.
 router.get("/health/database", authMiddleware, async (req, res) => {
   try {
@@ -778,7 +794,7 @@ router.get("/health/database", authMiddleware, async (req, res) => {
   }
 });
 
-// GET /api/health/mpesa — Check M-Pesa API connectivity
+// GET /api/health/mpesa â€” Check M-Pesa API connectivity
 // H-5 FIX: Requires authentication.
 router.get("/health/mpesa", authMiddleware, async (req, res) => {
   try {
@@ -804,7 +820,7 @@ router.get("/health/mpesa", authMiddleware, async (req, res) => {
   }
 });
 
-// GET /api/health/ssl — Check SSL certificate
+// GET /api/health/ssl â€” Check SSL certificate
 // H-5 FIX: Requires authentication.
 router.get("/health/ssl", authMiddleware, async (req, res) => {
   try {
