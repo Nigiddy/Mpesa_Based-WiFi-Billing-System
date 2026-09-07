@@ -1,41 +1,21 @@
 const { Worker, Queue } = require('bullmq');
-const Redis = require('ioredis');
 const prisma = require('../config/prismaClient');
 const { PaymentStatus } = require('@prisma/client');
 const { disconnectByMac, whitelistMAC, getActiveMACSet, getActiveDevices } = require('../config/mikrotik');
 const { logAudit } = require('../utils/auditLogger');
+// BOOT-5 FIX: Use the shared Redis singleton instead of creating a private connection
+const { getRedisClient } = require('../config/redis');
 
-// ─── Lazy Redis connection ────────────────────────────────────────────────────
-// Created on first use so that a Redis outage at startup does NOT crash the
-// Express process. All queue getters return null when Redis is unavailable,
-// which the callers already handle gracefully (payments fall back to sync path).
+// BOOT-5 FIX: Replaced private _redisConnection with the shared singleton.
+// getRedisClient() returns null when Redis is unavailable; callers handle that
+// gracefully by skipping queue operations (payments fall back to sync path).
 
-let _redisConnection = null;
-
+/**
+ * Thin wrapper kept for internal use — returns the shared Redis client.
+ * @returns {import('ioredis').Redis | null}
+ */
 function getRedisConnection() {
-  if (_redisConnection) return _redisConnection;
-  try {
-    _redisConnection = new Redis(process.env.REDIS_URL || 'redis://localhost:6379', {
-      maxRetriesPerRequest: null,
-      // Fail fast on initial connect so callers see the error quickly
-      enableOfflineQueue: false,
-      lazyConnect: false,
-    });
-
-    _redisConnection.on('error', (err) => {
-      console.error('[Workers] Redis connection error:', err.message);
-    });
-
-    _redisConnection.on('connect', () => {
-      console.log('[Workers] Redis connected successfully');
-    });
-
-    return _redisConnection;
-  } catch (err) {
-    console.error('[Workers] Failed to create Redis connection:', err.message);
-    _redisConnection = null;
-    return null;
-  }
+  return getRedisClient();
 }
 
 // ─── Queue factories ──────────────────────────────────────────────────────────
@@ -338,9 +318,33 @@ function getSessionSyncQueue() {
   return _sessionSyncQueue;
 }
 
+// ─── Graceful shutdown helper ─────────────────────────────────────────────────
+// BOOT-8 FIX: Export worker instances so index.js can call .close() on them
+// during SIGTERM / SIGINT before disconnecting Redis and Prisma.
+
+/**
+ * Gracefully closes all BullMQ workers.
+ * Call this in gracefulShutdown() before closing Redis.
+ */
+async function closeWorkers() {
+  const workers = [
+    paymentTimeoutWorker,
+    sessionExpiryWorker,
+    macWhitelistRetryWorker,
+    sessionSyncWorker,
+  ];
+  await Promise.allSettled(
+    workers
+      .filter(Boolean)
+      .map((w) => w.close().catch((e) => console.error('[Workers] Error closing worker:', e.message)))
+  );
+  console.log('[Workers] All BullMQ workers closed');
+}
+
 module.exports = {
   getPaymentTimeoutQueue,
   getSessionExpiryQueue,
   getMacWhitelistRetryQueue,
   getSessionSyncQueue,
+  closeWorkers,
 };

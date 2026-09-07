@@ -1,21 +1,25 @@
 const rateLimit = require('express-rate-limit');
 
 // Rate limiting for authentication endpoints
+// AUTH-10 FIX: Removed skipSuccessfulRequests: true — it allowed credential-stuffing
+// attacks to succeed as long as most attempts used wrong passwords. An auth endpoint
+// should count ALL attempts, not just failures.
 const authLimiter = rateLimit({
   windowMs: process.env.NODE_ENV === 'production' ? 15 * 60 * 1000 : 1 * 60 * 1000, // 15 min (prod) / 1 min (dev)
-  max: process.env.NODE_ENV === 'production' ? 5 : 50, // 5 (prod) / 50 (dev)
+  max: process.env.NODE_ENV === 'production' ? 5 : 50,
   message: {
     error: 'Too many authentication attempts, please try again later.'
   },
   standardHeaders: true,
   legacyHeaders: false,
-  skipSuccessfulRequests: true, // Don't count successful requests
+  // skipSuccessfulRequests intentionally omitted — defaults to false
 });
 
-// Rate limiting for payment endpoints
+// Rate limiting for payment initiation endpoints
+// NOTE: This limiter is NOT applied to /mpesa/callback (see AUTH-11 fix in mpesaCallback.js)
 const paymentLimiter = rateLimit({
   windowMs: 1 * 60 * 1000, // 1 minute
-  max: 3, // Limit each IP to 3 payment requests per minute
+  max: 3,
   message: {
     error: 'Too many payment requests, please try again later.'
   },
@@ -27,7 +31,7 @@ const paymentLimiter = rateLimit({
 // Rate limiting for general API endpoints
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // Limit each IP to 100 requests per windowMs
+  max: 100,
   message: {
     error: 'Too many requests, please try again later.'
   },
@@ -40,3 +44,4 @@ module.exports = {
   paymentLimiter,
   apiLimiter
 };
+
