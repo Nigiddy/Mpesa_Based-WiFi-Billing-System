@@ -10,7 +10,7 @@ const express = require("express");
 const prisma = require("../config/prismaClient");
 const { stkPush } = require("../config/mpesa");
 const { validatePaymentInitiationMiddleware } = require("../middleware/validationMiddleware");
-const { paymentLimiter } = require("../middleware/rateLimit");
+const { paymentLimiter, apiLimiter } = require("../middleware/rateLimit");
 const { verifyMACvsARP } = require('../utils/arpLookup');
 const { logAudit } = require('../utils/auditLogger');
 
@@ -231,11 +231,30 @@ router.get("/payments/status/:transactionId", async (req, res) => {
 
 /**
  * GET /api/v1/payments/:transactionId/details
- * Get full payment details (for receipts)
+ * Get payment details — used by the captive portal to show a payment confirmation.
+ *
+ * AUTH-9 FIX: This endpoint returns PII (phone number). To prevent enumeration,
+ * the caller must supply their phone number as a query parameter.
+ * If the phone does not match the payment record, we return 404 (not 403) to
+ * avoid confirming whether the transaction ID exists at all.
+ *
+ * Security: rate-limited + phone-match requirement.
  */
-router.get("/payments/:transactionId/details", async (req, res) => {
+router.get("/payments/:transactionId/details", apiLimiter, async (req, res) => {
   try {
     const { transactionId } = req.params;
+    const { phone } = req.query;
+
+    // AUTH-9 FIX: Require phone number to access payment details
+    if (!phone || typeof phone !== 'string') {
+      return res.status(400).json({
+        success: false,
+        error: 'Phone number is required to retrieve payment details'
+      });
+    }
+
+    // Normalise phone: accept 07..., +2547..., 2547...
+    const normalised = phone.trim().replace(/^\+/, '').replace(/^0/, '254');
 
     const payment = await prisma.payment.findUnique({
       where: { transactionId },
@@ -251,7 +270,9 @@ router.get("/payments/:transactionId/details", async (req, res) => {
       }
     });
 
-    if (!payment) {
+    // AUTH-9 FIX: Return 404 for both "not found" and "phone mismatch"
+    // so the response does not confirm whether a given transaction ID exists.
+    if (!payment || payment.phone !== normalised) {
       return res.status(404).json({
         success: false,
         error: 'Payment not found'
@@ -263,7 +284,7 @@ router.get("/payments/:transactionId/details", async (req, res) => {
       data: payment
     });
   } catch (error) {
-    console.error("❌ /v1/payments/details error:", error);
+    console.error("\u274c /v1/payments/details error:", error);
     return res.status(500).json({
       success: false,
       error: 'Failed to fetch payment details'

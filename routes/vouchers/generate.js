@@ -44,28 +44,62 @@ router.post('/generate', authMiddleware, async (req, res) => {
     const pkgEntry  = Object.values(PACKAGES).find((p) => p.timeLabel === planKey);
     const durationMs = pkgEntry.duration;
 
-    // Bulk-create with unique codes; retry up to 5 times on collision
-    const created = [];
-    for (let i = 0; i < qty; i++) {
-      let code;
-      let attempts = 0;
-      while (attempts < 5) {
-        code = generateVoucherCode();
-        const existing = await prisma.voucher.findUnique({ where: { code } });
-        if (!existing) break;
-        attempts++;
-      }
-      const voucher = await prisma.voucher.create({
-        data: { code, planKey, durationMs, maxUses: uses, currentUses: 0, expiresAt, createdBy: req.admin?.id || null },
+    // PERF-1 FIX: Generate all codes up-front, then insert in ONE createMany() call
+    // instead of issuing qty individual create() calls (500 DB round-trips → 2).
+    //
+    // Steps:
+    //  1. Generate qty candidate codes
+    //  2. Batch-check for existing codes with findMany (1 query)
+    //  3. Remove collisions and regenerate if any
+    //  4. Insert all valid codes with createMany (1 query)
+
+    let candidates = Array.from({ length: qty }, () => generateVoucherCode());
+
+    // Check for collisions in one query
+    const existing = await prisma.voucher.findMany({
+      where: { code: { in: candidates } },
+      select: { code: true },
+    });
+
+    if (existing.length > 0) {
+      const existingSet = new Set(existing.map((v) => v.code));
+      // Replace collisions with fresh codes
+      candidates = candidates.map((c) => {
+        if (!existingSet.has(c)) return c;
+        // Simple retry loop for the rare collision
+        let newCode;
+        let attempts = 0;
+        do { newCode = generateVoucherCode(); attempts++; } while (existingSet.has(newCode) && attempts < 20);
+        return newCode;
       });
-      created.push(voucher);
     }
+
+    const now = new Date();
+    const data = candidates.map((code) => ({
+      code,
+      planKey,
+      durationMs,
+      maxUses: uses,
+      currentUses: 0,
+      expiresAt,
+      createdBy: req.admin?.id || null,
+      createdAt: now,
+      updatedAt: now,
+    }));
+
+    await prisma.voucher.createMany({ data, skipDuplicates: true });
+
+    // Fetch the created vouchers to return them with status
+    const created = await prisma.voucher.findMany({
+      where: { code: { in: candidates } },
+      orderBy: { createdAt: 'desc' },
+    });
 
     logAudit('vouchers_generated', { quantity: qty, planKey, maxUses: uses, expiresAt, admin: req.admin?.id });
 
     return res.status(201).json(serializeBigInts({
       success: true,
-      message: `${qty} voucher(s) generated`,
+      message: `${created.length} voucher(s) generated`,
       data: created.map((v) => ({ ...v, status: deriveVoucherStatus(v) })),
     }));
   } catch (error) {
@@ -73,5 +107,6 @@ router.post('/generate', authMiddleware, async (req, res) => {
     return res.status(500).json({ success: false, error: 'Failed to generate vouchers' });
   }
 });
+
 
 module.exports = router;

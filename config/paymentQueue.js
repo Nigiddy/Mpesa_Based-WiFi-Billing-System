@@ -1,23 +1,26 @@
 // BullMQ queue setup for M-Pesa payment jobs
 const { Queue } = require('bullmq');
-const Redis = require('ioredis');
+// BOOT-5 FIX: Use shared Redis singleton instead of creating a private connection
+const { getRedisClient } = require('./redis');
 
 let paymentQueue = null;
-let connection = null;
 
 /**
- * Lazy load Redis connection - only connect when queue is first used
+ * Returns the BullMQ payment queue, creating it lazily on first call.
+ * Returns null if Redis is unavailable — callers fall back to synchronous processing.
  */
 function getPaymentQueue() {
   if (!paymentQueue) {
     try {
-      connection = new Redis(process.env.REDIS_URL || 'redis://localhost:6379', {
-        maxRetriesPerRequest: null,
-      });
+      const connection = getRedisClient();
+      if (!connection) {
+        console.warn('⚠️  Redis not available — payment queue not created. Payments will be processed synchronously.');
+        return null;
+      }
       paymentQueue = new Queue('mpesa-payments', { connection });
-      console.log('🔴 Redis connection established for payment queue');
+      console.log('✅ Payment queue initialised (Redis connected)');
     } catch (error) {
-      console.warn('⚠️  Redis not available for queue - payments will be processed synchronously', error.message);
+      console.warn('⚠️  Failed to create payment queue:', error.message);
       return null;
     }
   }
@@ -27,9 +30,10 @@ function getPaymentQueue() {
 module.exports = {
   getPaymentQueue,
   /**
-   * For backward compatibility, export queue directly with lazy getter
+   * For backward compatibility — lazy getter via property accessor.
    */
   get queue() {
     return getPaymentQueue();
   }
 };
+

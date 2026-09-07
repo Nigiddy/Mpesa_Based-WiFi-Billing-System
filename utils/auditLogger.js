@@ -24,11 +24,16 @@ const targets = [
   }
 ];
 
-// Add console logging only if not in production for cleaner production logs
-if (process.env.NODE_ENV !== 'production') {
+// BOOT-15 FIX: Guard pino-pretty behind a strict equality check rather than
+// NODE_ENV !== 'production'. If NODE_ENV is absent (e.g. missing .env on first
+// deploy), the process would start in "development" mode, attempt to load
+// pino-pretty, and crash immediately if it was installed with --omit=dev.
+// Defaulting the guard to "production-unless-explicitly-set-to-development"
+// makes the app safe even before the .env is fully configured.
+if (process.env.NODE_ENV === 'development') {
   targets.push({
     level: 'info',
-    target: 'pino-pretty', // Makes logs human-readable
+    target: 'pino-pretty', // Makes logs human-readable in development
     options: {
       colorize: true,
       translateTime: 'SYS:standard',

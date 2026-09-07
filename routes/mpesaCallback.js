@@ -1,5 +1,4 @@
 
-
 const express = require("express");
 const prisma = require("../config/prismaClient");
 const { PaymentStatus } = require("@prisma/client");
@@ -9,18 +8,24 @@ const {
   verifyPaymentWithMpesa
 } = require("../middleware/mpesaCallbackSecurityMiddleware");
 const { validateCallbackStructure } = require("../validators/paymentValidator");
-const { paymentLimiter } = require("../middleware/rateLimit");
+// AUTH-11 FIX: paymentLimiter removed from this file — it was causing Safaricom
+// retry callbacks to be rejected with 429. The IP whitelist in
+// validateCallbackSecurityMiddleware + BullMQ jobId idempotency are sufficient.
 const { logAudit } = require("../utils/auditLogger");
 const { sendPaymentStatus } = require("../services/websocket");
+// BOOT-5 FIX: Use the shared Redis singleton instead of creating a private connection
+const { getRedisClient } = require("../config/redis");
 
 const router = express.Router();
 
-
 router.post(
   "/mpesa/callback",
-  paymentLimiter,
+  // AUTH-11 FIX: paymentLimiter intentionally removed — Safaricom retries from the
+  // same IP range would be rejected with 429. Security is handled by the IP whitelist
+  // in validateCallbackSecurityMiddleware and job idempotency via BullMQ jobId.
   validateCallbackSecurityMiddleware,
   async (req, res) => {
+
     // Immediate acknowledgment to prevent M-Pesa retries
     // We'll process asynchronously in background
     res.status(200).json({ success: true });
@@ -99,11 +104,12 @@ router.post(
  */
 async function setupPaymentWorker() {
   const { Worker } = require('bullmq');
-  const Redis = require('ioredis');
-
-  const connection = new Redis(process.env.REDIS_URL || 'redis://localhost:6379', {
-    maxRetriesPerRequest: null, // Required for BullMQ resilience
-  });
+  // BOOT-5 FIX: Use the shared Redis singleton instead of creating a private connection
+  const connection = getRedisClient();
+  if (!connection) {
+    console.warn('[mpesaCallback] Redis not available — payment worker not started');
+    return null;
+  }
 
   const paymentWorker = new Worker(
     'mpesa-payments',

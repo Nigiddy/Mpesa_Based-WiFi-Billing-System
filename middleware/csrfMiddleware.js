@@ -8,12 +8,27 @@ const { doubleCsrf } = require('csrf-csrf');
 
 const isProduction = process.env.NODE_ENV === 'production';
 
+// AUTH-13 FIX: Removed the hardcoded 'kibaruani_csrf_secret_fallback_key_min32' fallback.
+// Using a publicly-known hardcoded string as the CSRF signing secret would allow an
+// attacker to forge valid CSRF tokens. If COOKIE_SECRET (preferred) and JWT_SECRET
+// (fallback) are both absent the module now throws at startup.
+// validateSecrets() in config/secrets.js also enforces this, but belt-and-suspenders
+// is appropriate for a security-critical module.
+const csrfSecret = process.env.COOKIE_SECRET || process.env.JWT_SECRET;
+if (!csrfSecret) {
+  throw new Error(
+    '[CSRF] COOKIE_SECRET (or JWT_SECRET) must be set. ' +
+    'Set a cryptographically random value in your .env file.'
+  );
+}
+
 const {
   invalidCsrfTokenError,
   generateCsrfToken,
   doubleCsrfProtection,
 } = doubleCsrf({
-  getSecret: () => process.env.COOKIE_SECRET || process.env.JWT_SECRET || 'kibaruani_csrf_secret_fallback_key_min32',
+  getSecret: () => csrfSecret,
+
   getSessionIdentifier: (req) => req.cookies?.admin_token || req.ip || 'anonymous',
   cookieName: 'x-csrf-token',
   cookieOptions: {

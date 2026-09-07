@@ -24,7 +24,10 @@ module.exports = {
       max_restarts: 10,
       restart_delay: 4000,
       listen_timeout: 8000,
-      kill_timeout: 5000,
+      // BOOT-14 FIX: kill_timeout must be > the forced-exit setTimeout in index.js
+      // (12 000 ms). Previously 5 000 ms meant PM2 sent SIGKILL before Node's own
+      // graceful-shutdown handler had time to close workers, Redis, and Prisma.
+      kill_timeout: 14000,
     },
   ],
 };

@@ -228,16 +228,32 @@ function validateSecrets() {
     }
   }
 
-  // If errors found, log and exit
-  if (errors.length > 0) {
-    console.error('\n❌ SECRETS VALIDATION FAILED\n');
-    errors.forEach((error) => console.error(error));
-    console.error('\n📖 See env.template for required secrets\n');
-
-    process.exit(1);
+  // AUTH-2 FIX: Extend the COOKIE_SECRET placeholder check to ALL environments.
+  // The value 'your_cookie_secret_here' is 22 chars and passes the minLength check
+  // in REQUIRED_SECRETS, but is a publicly-known placeholder. Warn loudly in dev;
+  // treat as an error in production.
+  const cookieSecret = process.env.COOKIE_SECRET;
+  if (cookieSecret && (cookieSecret.includes('your_') || cookieSecret === 'change-me')) {
+    if (process.env.NODE_ENV === 'production') {
+      errors.push('\u274c COOKIE_SECRET appears to be a placeholder. Generate a strong random value (e.g. openssl rand -hex 32).');
+    } else {
+      console.warn('\n\u26a0\ufe0f  WARNING: COOKIE_SECRET is a placeholder. CSRF tokens are insecure until you set a real value.\n');
+    }
   }
 
-  console.log('✅ All secrets validated successfully\n');
+  // If errors found, throw an Error (BOOT-7 FIX: was process.exit(1)).
+  // Throwing allows the uncaughtException handler in index.js to log the error
+  // via the structured logger before exiting, and prevents PM2 from cycling through
+  // max_restarts with abandoned Prisma connection pools.
+  if (errors.length > 0) {
+    console.error('\n\u274c SECRETS VALIDATION FAILED\n');
+    errors.forEach((error) => console.error(error));
+    console.error('\n\ud83d\udcd6 See env.template for required secrets\n');
+
+    throw new Error(`Secrets validation failed with ${errors.length} error(s). See above for details.`);
+  }
+
+  console.log('\u2705 All secrets validated successfully\n');
 }
 
 /**
