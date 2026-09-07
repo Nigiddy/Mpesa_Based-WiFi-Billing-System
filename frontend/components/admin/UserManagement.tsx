@@ -39,7 +39,6 @@ const UserManagement = () => {
         throw new Error(response.error || MESSAGES.ERRORS.FETCH_USERS)
       }
     } catch (error: unknown) {
-      console.error("Error fetching users:", error)
       toast.error(MESSAGES.ERRORS.FETCH_USERS, {
         description: error instanceof Error ? error.message : MESSAGES.ERRORS.UNKNOWN_ERROR,
       })

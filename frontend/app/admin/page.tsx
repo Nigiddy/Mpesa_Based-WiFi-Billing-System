@@ -97,8 +97,8 @@ export default function AdminDashboard() {
       if (response.success) {
         setHealthStatus(response.data)
       }
-    } catch (error) {
-      console.error("Failed to fetch health status:", error)
+    } catch {
+      setHealthStatus(null)
     }
   }
 

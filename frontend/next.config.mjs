@@ -16,6 +16,8 @@ const nextConfig = {
     // will be baked into the client JS bundle and visible to anyone.
     // JWT_SECRET must NEVER appear here — middleware.ts reads it server-side only.
     NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL,
+    NEXT_PUBLIC_PORTAL_ORIGIN: process.env.NEXT_PUBLIC_PORTAL_ORIGIN,
+    NEXT_PUBLIC_SITE_URL: process.env.NEXT_PUBLIC_SITE_URL,
   },
 }
 

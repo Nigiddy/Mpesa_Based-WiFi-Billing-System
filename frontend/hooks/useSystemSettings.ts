@@ -19,8 +19,7 @@ export const useSystemSettings = () => {
             } else {
                 throw new Error(response.error || MESSAGES.ERRORS.FETCH_SETTINGS)
             }
-        } catch (error) {
-            console.error("Error fetching settings:", error)
+        } catch {
             toast.error(MESSAGES.ERRORS.FETCH_SETTINGS, {
                 description: "Please try refreshing the page",
             })
@@ -63,37 +62,6 @@ export const useSystemSettings = () => {
         }
     }
 
-    const restartNetworkService = async () => {
-        toast.loading("Restarting network service...", { id: "restart-service" })
-        try {
-            const response = await apiClient.restartNetworkService()
-            if (response.success) {
-                toast.success(MESSAGES.SUCCESS.NETWORK_RESTARTED, { id: "restart-service" })
-            } else {
-                throw new Error(response.error)
-            }
-        } catch (error) {
-            toast.error(MESSAGES.ERRORS.ACTION_FAILED, { id: "restart-service" })
-        }
-    }
-
-    const backupDatabase = async () => {
-        toast.loading("Creating database backup...", { id: "backup-db" })
-        try {
-            const response = await apiClient.backupDatabase()
-            if (response.success) {
-                toast.success(MESSAGES.SUCCESS.DB_BACKUP, {
-                    id: "backup-db",
-                    description: "Backup saved to server storage",
-                })
-            } else {
-                throw new Error(response.error)
-            }
-        } catch (error) {
-            toast.error(MESSAGES.ERRORS.ACTION_FAILED, { id: "backup-db" })
-        }
-    }
-
     const disconnectAllUsers = async () => {
         toast.loading("Disconnecting all users...", { id: "disconnect-all" })
         try {
@@ -114,8 +82,6 @@ export const useSystemSettings = () => {
         saving,
         updateSetting,
         saveSettings,
-        restartNetworkService,
-        backupDatabase,
         disconnectAllUsers,
     }
 }

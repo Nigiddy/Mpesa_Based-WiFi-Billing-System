@@ -19,6 +19,7 @@ export function generateMetadata(options: PageMetadataOptions = {}): Metadata {
   } = options
 
   return {
+    metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'),
     title,
     description,
     keywords,

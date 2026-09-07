@@ -1,7 +1,6 @@
 "use client";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect } from "react";
 import { motion } from "framer-motion";
 import {
   WifiOff,
@@ -15,13 +14,6 @@ import { Button } from "@/components/ui/button";
 const NotFound = () => {
   const pathname = usePathname();
   const router = useRouter();
-
- useEffect(() => {
-  console.warn(
-    "[QONNECT 404] Unknown route:",
-    pathname
-  );
-}, [pathname]);
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background via-primary/5 to-background overflow-hidden relative">

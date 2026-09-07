@@ -146,6 +146,16 @@ export default function SupportPage() {
               </div>
 
               <div className="space-y-2">
+                <Label htmlFor="phone">Phone Number</Label>
+                <Input id="phone" type="tel" value={formData.phone} onChange={handleInputChange} placeholder="0712 345 678" className="h-12 bg-transparent" />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="subject">Subject</Label>
+                <Input id="subject" value={formData.subject} onChange={handleInputChange} placeholder="Payment or connection issue" className="h-12 bg-transparent" />
+              </div>
+
+              <div className="space-y-2">
                 <Label htmlFor="message">Message</Label>
                 <Textarea id="message" value={formData.message} onChange={handleInputChange} rows={5} placeholder="How can we help you today?" className="resize-none bg-transparent" />
               </div>
