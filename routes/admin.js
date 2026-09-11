@@ -7,6 +7,27 @@ const { csrfProtection, generateCsrfToken } = require("../middleware/csrfMiddlew
 const { logAudit } = require("../utils/auditLogger");
 const { apiLimiter } = require("../middleware/rateLimit");
 
+// ── Security: enum allow-lists for Prisma status filters ──────────────────────
+// Validated against prisma/schema.prisma enums. Only values in this list are
+// forwarded to Prisma. Any other value gets a 400 response.
+const ALLOWED_USER_STATUSES = new Set(['ACTIVE', 'EXPIRED', 'BLOCKED', 'INACTIVE']);
+const ALLOWED_PAYMENT_STATUSES = new Set([
+  'PENDING', 'COMPLETED', 'FAILED', 'EXPIRED',
+  'FRAUD_DETECTED', 'VERIFICATION_FAILED', 'COMPLETED_BUT_MAC_FAILED', 'REFUNDED'
+]);
+
+// ── Security: HTML escape helper for receipt generation ───────────────────────
+// Prevents Stored XSS when database values are interpolated into HTML.
+function escapeHtml(value) {
+  if (value === null || value === undefined) return '';
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#x27;');
+}
+
 function formatCsvValue(value) {
   if (value === null || value === undefined) return ""
   const text = String(value)
@@ -154,6 +175,17 @@ router.get("/users/export/csv", authMiddleware, async (req, res) => {
 router.get("/users", authMiddleware, async (req, res) => {
   try {
     const { search = "", status = "all", page = 1, limit = 10 } = req.query;
+
+    // SEC-FIX: Validate status against the UserStatus enum allow-list.
+    // Passing an arbitrary string to Prisma's where.status can cause unhandled
+    // errors (leaking stack traces) or unexpected query behaviour.
+    if (status !== "all" && !ALLOWED_USER_STATUSES.has(status)) {
+      return res.status(400).json({
+        success: false,
+        error: `Invalid status value. Must be one of: all, ${[...ALLOWED_USER_STATUSES].join(', ')}`
+      });
+    }
+
     const pageNum = Number(page) || 1;
     const per = Number(limit) || 10;
     const where = {};
@@ -358,6 +390,14 @@ router.get("/transactions", authMiddleware, async (req, res) => {
   try {
     const { search = "", status = "all", page = 1, limit = 10, startDate = null, endDate = null } = req.query;
 
+    // SEC-FIX: Validate status against the PaymentStatus enum allow-list.
+    if (status !== "all" && !ALLOWED_PAYMENT_STATUSES.has(status)) {
+      return res.status(400).json({
+        success: false,
+        error: `Invalid status value. Must be one of: all, ${[...ALLOWED_PAYMENT_STATUSES].join(', ')}`
+      });
+    }
+
     const where = {};
     if (status !== "all") {
       where.status = status;
@@ -494,12 +534,34 @@ router.get("/transactions/:transactionId/receipt/download", authMiddleware, asyn
     const completedAt = payment.completedAt ? payment.completedAt.toLocaleString('en-GB', { timeZone: 'UTC' }) : 'Pending';
     const refundedAt = payment.refundedAt ? payment.refundedAt.toLocaleString('en-GB', { timeZone: 'UTC' }) : 'N/A';
 
+    // SEC-FIX: Escape all database-sourced values before interpolating into HTML
+    // to prevent Stored XSS. An attacker who stores a malicious string in any of
+    // these fields (e.g. phone, mpesaRef) would otherwise have their script
+    // executed in the admin's browser when they view the receipt.
+    const safe = {
+      transactionId: escapeHtml(payment.transactionId),
+      status:        escapeHtml(payment.status),
+      phone:         escapeHtml(payment.phone),
+      mpesaRef:      escapeHtml(payment.mpesaRef || 'N/A'),
+      mpesaReceipt:  escapeHtml(payment.mpesaReceipt || 'N/A'),
+      macAddress:    escapeHtml(payment.macAddress),
+      ipAddress:     escapeHtml(payment.ipAddress || 'N/A'),
+      refundedAmount: escapeHtml(payment.refundedAmount ?? 'N/A'),
+      refundReason:  escapeHtml(payment.refundReason || 'N/A'),
+    };
+    // Date strings from toLocaleString() contain only printable ASCII — still escaped for safety
+    const safeRequestedAt  = escapeHtml(requestedAt);
+    const safeCompletedAt  = escapeHtml(completedAt);
+    const safeRefundedAt   = escapeHtml(refundedAt);
+    const safeAmountFmt    = escapeHtml(amountFormatted);
+    const safeGeneratedAt  = escapeHtml(new Date().toLocaleString('en-GB', { timeZone: 'UTC' }));
+
     const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Receipt ${payment.transactionId}</title>
+  <title>Receipt ${safe.transactionId}</title>
   <style>
     body { font-family: Arial, sans-serif; margin: 0; padding: 24px; background: #f8fafc; color: #111827; }
     .receipt { max-width: 760px; margin: auto; background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 32px; }
@@ -518,31 +580,33 @@ router.get("/transactions/:transactionId/receipt/download", authMiddleware, asyn
     <div class="header">
       <div>
         <h1>Payment Receipt</h1>
-        <p>Transaction ID: <strong>${payment.transactionId}</strong></p>
+        <p>Transaction ID: <strong>${safe.transactionId}</strong></p>
       </div>
-      <div class="tag">${payment.status}</div>
+      <div class="tag">${safe.status}</div>
     </div>
     <table>
-      <tr><td class="label">Phone</td><td class="value">${payment.phone}</td></tr>
-      <tr><td class="label">Amount</td><td class="value">${amountFormatted}</td></tr>
-      <tr><td class="label">M-Pesa Reference</td><td class="value">${payment.mpesaRef || 'N/A'}</td></tr>
-      <tr><td class="label">M-Pesa Receipt</td><td class="value">${payment.mpesaReceipt || 'N/A'}</td></tr>
-      <tr><td class="label">MAC Address</td><td class="value">${payment.macAddress}</td></tr>
-      <tr><td class="label">IP Address</td><td class="value">${payment.ipAddress || 'N/A'}</td></tr>
-      <tr><td class="label">Requested At</td><td class="value">${requestedAt}</td></tr>
-      <tr><td class="label">Completed At</td><td class="value">${completedAt}</td></tr>
-      <tr><td class="label">Refunded Amount</td><td class="value">${payment.refundedAmount ?? 'N/A'}</td></tr>
-      <tr><td class="label">Refund Reason</td><td class="value">${payment.refundReason || 'N/A'}</td></tr>
-      <tr><td class="label">Refunded At</td><td class="value">${refundedAt}</td></tr>
-      <tr><td class="label">Receipt Generated</td><td class="value">${new Date().toLocaleString('en-GB', { timeZone: 'UTC' })}</td></tr>
+      <tr><td class="label">Phone</td><td class="value">${safe.phone}</td></tr>
+      <tr><td class="label">Amount</td><td class="value">${safeAmountFmt}</td></tr>
+      <tr><td class="label">M-Pesa Reference</td><td class="value">${safe.mpesaRef}</td></tr>
+      <tr><td class="label">M-Pesa Receipt</td><td class="value">${safe.mpesaReceipt}</td></tr>
+      <tr><td class="label">MAC Address</td><td class="value">${safe.macAddress}</td></tr>
+      <tr><td class="label">IP Address</td><td class="value">${safe.ipAddress}</td></tr>
+      <tr><td class="label">Requested At</td><td class="value">${safeRequestedAt}</td></tr>
+      <tr><td class="label">Completed At</td><td class="value">${safeCompletedAt}</td></tr>
+      <tr><td class="label">Refunded Amount</td><td class="value">${safe.refundedAmount}</td></tr>
+      <tr><td class="label">Refund Reason</td><td class="value">${safe.refundReason}</td></tr>
+      <tr><td class="label">Refunded At</td><td class="value">${safeRefundedAt}</td></tr>
+      <tr><td class="label">Receipt Generated</td><td class="value">${safeGeneratedAt}</td></tr>
     </table>
     <p class="note">This receipt is generated by the administrative dashboard. Please print or save this page for your records.</p>
   </div>
 </body>
 </html>`;
 
-    res.setHeader('Content-Type', 'text/html');
-    res.setHeader('Content-Disposition', `inline; filename="receipt_${payment.transactionId}.html"`);
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    // SEC-FIX: Use 'attachment' instead of 'inline' so the file is downloaded
+    // rather than rendered by the browser — defence-in-depth against XSS.
+    res.setHeader('Content-Disposition', `attachment; filename="receipt_${safe.transactionId}.html"`);
     return res.send(html);
   } catch (error) {
     console.error('Receipt render error:', error);
