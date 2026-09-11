@@ -53,7 +53,12 @@ const initWebSocket = (server) => {
             }
 
             try {
-                const decoded = jwt.verify(token, process.env.JWT_SECRET);
+                // SEC-FIX: Pin algorithm to HS256 — prevents alg:none / algorithm
+                // confusion attacks. Without this option, jsonwebtoken will accept
+                // any algorithm the token header declares, including the unsigned
+                // `alg: none` variant. The HTTP authMiddleware already pins HS256;
+                // this makes the WebSocket path consistent with that policy.
+                const decoded = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
                 if (decoded.role !== 'admin') {
                     throw new Error('Insufficient role');
                 }

@@ -10,8 +10,18 @@
  * and the function will return null (fail-open).
  */
 
-const { exec } = require('child_process');
+// SEC-FIX: Use execFile() instead of exec() to prevent OS Command Injection.
+// exec() passes the command through a shell, so any shell metacharacters in
+// `cleanIP` (e.g. "; rm -rf /", backticks) would be interpreted.
+// execFile() bypasses the shell entirely — the IP is passed as a discrete
+// argument and is never interpreted by sh/bash.
+const { execFile } = require('child_process');
 const os = require('os');
+
+// SEC-FIX: Strict IP allowlist regex used as defence-in-depth.
+// Only well-formed IPv4 addresses or compressed IPv6 addresses pass.
+// Rejects anything containing shell metacharacters before execFile() is called.
+const SAFE_IP_RE = /^(?:\d{1,3}\.){3}\d{1,3}$|^[0-9a-fA-F:]+$/;
 
 /**
  * Look up the MAC address for a given IP via the system ARP table.
@@ -28,23 +38,34 @@ function getMACFromARP(ip) {
   // Skip loopback — ARP won't have an entry for it
   if (cleanIP === '127.0.0.1' || cleanIP === '::1') return Promise.resolve(null);
 
+  // SEC-FIX: Reject IPs that contain anything other than digits, dots, colons,
+  // or hex characters. This is a second gate before the execFile() call.
+  if (!SAFE_IP_RE.test(cleanIP)) {
+    console.warn('[ARP] Rejected unsafe IP value:', cleanIP);
+    return Promise.resolve(null);
+  }
+
   return new Promise((resolve) => {
     const platform = os.platform();
 
-    let cmd;
-    if (platform === 'linux') {
-      // On Linux, `arp -n <ip>` prints a table row with MAC in the 3rd column
-      cmd = `arp -n ${cleanIP}`;
-    } else if (platform === 'darwin') {
-      // macOS: `arp -n <ip>`
-      cmd = `arp -n ${cleanIP}`;
+    // SEC-FIX: Build command as [executable, argsArray] for execFile().
+    // The IP is passed as a separate element — never interpolated into a string
+    // that a shell would interpret. Shell injection is structurally impossible.
+    let executable;
+    let args;
+
+    if (platform === 'linux' || platform === 'darwin') {
+      // `arp -n <ip>` prints a table row with MAC in the 3rd column
+      executable = 'arp';
+      args = ['-n', cleanIP];
     } else if (platform === 'win32') {
-      cmd = `arp -a ${cleanIP}`;
+      executable = 'arp';
+      args = ['-a', cleanIP];
     } else {
       return resolve(null);
     }
 
-    exec(cmd, { timeout: 3000 }, (err, stdout) => {
+    execFile(executable, args, { timeout: 3000 }, (err, stdout) => {
       if (err || !stdout) return resolve(null);
 
       // Match standard MAC formats: AA:BB:CC:DD:EE:FF or AA-BB-CC-DD-EE-FF

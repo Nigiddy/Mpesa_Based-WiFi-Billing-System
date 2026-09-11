@@ -163,12 +163,22 @@ router.post(
  * GET /api/v1/payments/status/:transactionId
  * Check payment status
  * Used for frontend polling (should migrate to WebSocket)
+ *
+ * SEC-FIX (AUTH-9): This endpoint was previously unauthenticated and returned
+ * mpesaRef + amount to anyone who could enumerate a transactionId. The format
+ * TXN_<epoch>_<4-byte-hex> is guessable by time-range scanning.
+ *
+ * Fix: Require the caller to supply the phone number used during payment
+ * initiation. If the phone is missing or does not match the record we return
+ * 404 (not 403) so the response does not confirm whether the transactionId
+ * exists at all. The phone is never included in the response payload.
  */
 router.get("/payments/status/:transactionId", async (req, res) => {
   try {
     const { transactionId } = req.params;
+    const { phone } = req.query;
 
-    // Simple validation
+    // SEC-FIX: Validate transactionId format
     if (!transactionId || typeof transactionId !== 'string' || transactionId.length > 100) {
       return res.status(400).json({
         success: false,
@@ -176,10 +186,22 @@ router.get("/payments/status/:transactionId", async (req, res) => {
       });
     }
 
+    // SEC-FIX: Require phone to prove ownership of this transaction
+    if (!phone || typeof phone !== 'string' || phone.trim().length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Phone number is required to check payment status'
+      });
+    }
+
+    // Normalise phone: accept 07..., +2547..., 2547...
+    const normalisedPhone = phone.trim().replace(/^\+/, '').replace(/^0/, '254');
+
     const payment = await prisma.payment.findUnique({
       where: { transactionId },
       select: {
         id: true,
+        phone: true,     // fetched for ownership check only — not returned in response
         status: true,
         mpesaRef: true,
         expiresAt: true,
@@ -188,13 +210,12 @@ router.get("/payments/status/:transactionId", async (req, res) => {
       }
     });
 
-    if (!payment) {
-      return res.json({
-        success: true,
-        data: {
-          status: 'not_found',
-          message: 'Transaction not found'
-        }
+    // SEC-FIX: Return 404 for BOTH "not found" and "phone mismatch" cases so
+    // the response does not confirm whether a given transactionId exists.
+    if (!payment || payment.phone !== normalisedPhone) {
+      return res.status(404).json({
+        success: false,
+        error: 'Transaction not found'
       });
     }
 
@@ -218,6 +239,7 @@ router.get("/payments/status/:transactionId", async (req, res) => {
         status: payment.status.toLowerCase(), // Send lowercase to frontend
         mpesaRef: payment.mpesaRef,
         expiresAt: payment.expiresAt
+        // phone is intentionally omitted from the response
       }
     });
   } catch (error) {
