@@ -95,11 +95,17 @@ router.post('/redeem', paymentLimiter, async (req, res) => {
     // Resolve the package for this planKey (for data cap + duration)
     const pkg = getPackageByPlanKey(voucher.planKey);
     const durationMs = pkg ? pkg.duration : Number(voucher.durationMs);
+    const expiryTime = new Date(Date.now() + durationMs);
 
     // ── 2. Atomic DB update ────────────────────────────────────────────────
-    let redemption;
+    // Issue 5 Fix: session.create is moved INSIDE the same $transaction as
+    // voucherRedemption.create. Previously, a session.create failure after the
+    // TX committed left a committed redemption with no session row — revenue
+    // tracking, expiry jobs, and admin reports were silently wrong.
+    // The BullMQ sessionExpiryQueue.add() must stay OUTSIDE the transaction.
+    let redemption, newSession;
     try {
-      redemption = await prisma.$transaction(async (tx) => {
+      ({ redemption, newSession } = await prisma.$transaction(async (tx) => {
         // Re-read inside transaction (guards against race conditions)
         const locked = await tx.voucher.findUnique({ where: { code: normalizedCode } });
 
@@ -112,14 +118,29 @@ router.post('/redeem', paymentLimiter, async (req, res) => {
           data: { currentUses: { increment: 1 } },
         });
 
-        return tx.voucherRedemption.create({
+        const txRedemption = await tx.voucherRedemption.create({
           data: {
             voucherId:  locked.id,
             macAddress: normalizedMAC,
             ipAddress:  clientIP,
           },
         });
-      });
+
+        // Session creation is atomic with the redemption so both rows always
+        // exist together or not at all.
+        const txSession = await tx.session.create({
+          data: {
+            // userId is intentionally null for voucher sessions (no phone / user)
+            macAddress:           normalizedMAC,
+            ipAddress:            clientIP,
+            expiryTime,
+            startTime:            new Date(),
+            voucherRedemptionId:  txRedemption.id,
+          },
+        });
+
+        return { redemption: txRedemption, newSession: txSession };
+      }));
     } catch (txError) {
       if (txError?.code === 'FULLY_USED') {
         return res.status(410).json({
@@ -131,6 +152,7 @@ router.post('/redeem', paymentLimiter, async (req, res) => {
     }
 
     // ── 3. Whitelist MAC on MikroTik ───────────────────────────────────────
+    // External network call — must stay outside any DB transaction.
     const mikrotikResult = await whitelistMAC(normalizedMAC, voucher.planKey, pkg);
 
     logAudit('voucher_redeemed', {
@@ -145,23 +167,11 @@ router.post('/redeem', paymentLimiter, async (req, res) => {
       console.error(`⚠️ Voucher redeemed but MAC whitelist failed: ${mikrotikResult.message}`);
     }
 
-    // ── 4. Create Session record & schedule expiry job ─────────────────────
-    const expiryTime = new Date(Date.now() + durationMs);
-    let newSession = null;
-
+    // ── 4. Schedule BullMQ expiry job (outside transaction) ────────────────
+    // Issue 2 / Issue 5: BullMQ enqueue MUST be outside any DB transaction.
+    // If the queue call fires inside a transaction that later rolls back, the
+    // job fires for a session that was never committed.
     try {
-      newSession = await prisma.session.create({
-        data: {
-          // userId is intentionally null for voucher sessions (no phone / user)
-          macAddress:           normalizedMAC,
-          ipAddress:            clientIP,
-          expiryTime,
-          startTime:            new Date(),
-          voucherRedemptionId:  redemption.id,
-        },
-      });
-
-      // Schedule BullMQ delayed job to disconnect on expiry
       const sessionExpiryQueue = getSessionExpiryQueue();
       const delay = expiryTime.getTime() - Date.now();
       if (sessionExpiryQueue && delay > 0) {
@@ -176,13 +186,13 @@ router.post('/redeem', paymentLimiter, async (req, res) => {
         );
         console.log(`[Voucher] Expiry job scheduled for session ${newSession.id} at ${expiryTime.toISOString()}`);
       }
-    } catch (sessionErr) {
-      // Session tracking failure should not block the user from connecting
-      console.error('⚠️ Failed to create voucher session record:', sessionErr.message);
-      logAudit('voucher_session_create_failed', {
-        redemptionId: redemption.id,
+    } catch (queueErr) {
+      // Queue failure should not block the user — session row is already committed
+      console.error('⚠️ Failed to schedule voucher session expiry job:', queueErr.message);
+      logAudit('voucher_expiry_queue_failed', {
+        sessionId: newSession.id,
         macAddress: normalizedMAC,
-        error: sessionErr.message,
+        error: queueErr.message,
       });
     }
 

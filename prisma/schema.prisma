@@ -1,6 +1,3 @@
-// Prisma schema for WiFi Billing System
-// Edit the DATABASE_URL in .env before running migrations
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -10,18 +7,174 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// ============================================
-// ENUMS
-// ============================================
-
-enum UserStatus {
-  ACTIVE
-  EXPIRED
-  BLOCKED
-  INACTIVE
+model admin {
+  id        Int      @id @default(autoincrement())
+  email     String   @unique(map: "Admin_email_key")
+  password  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime
 }
 
-enum PaymentStatus {
+model auditlog {
+  id        Int      @id @default(autoincrement())
+  action    String
+  userId    Int?
+  details   String
+  ip        String?
+  createdAt DateTime @default(now())
+
+  @@index([action], map: "AuditLog_action_idx")
+  @@index([createdAt], map: "AuditLog_createdAt_idx")
+  @@index([userId], map: "AuditLog_userId_idx")
+}
+
+model payment {
+  id                   Int                   @id @default(autoincrement())
+  transactionId        String                @unique(map: "Payment_transactionId_key")
+  userId               Int?
+  phone                String
+  amount               Int
+  status               payment_status        @default(PENDING)
+  mpesa_reference      String?               @unique(map: "Payment_mpesa_reference_key")
+  mpesa_receipt_number String?               @unique(map: "Payment_mpesa_receipt_number_key")
+  macAddress           String
+  ipAddress            String?
+  expiresAt            DateTime?
+  requestedAt          DateTime              @default(now())
+  completedAt          DateTime?
+  failedAt             DateTime?
+  refundedAmount       Int?                  @default(0)
+  refundReason         String?
+  refundedAt           DateTime?
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime
+  user                 user?                 @relation(fields: [userId], references: [id], map: "Payment_userId_fkey")
+  paymentstatusupdate  paymentstatusupdate[]
+  session              session[]
+
+  @@index([createdAt], map: "Payment_createdAt_idx")
+  @@index([mpesa_reference], map: "Payment_mpesa_reference_idx")
+  @@index([phone, status, createdAt], map: "Payment_phone_status_createdAt_idx")
+  @@index([status, createdAt], map: "Payment_status_createdAt_idx")
+  @@index([status], map: "Payment_status_idx")
+  @@index([transactionId], map: "Payment_transactionId_idx")
+  @@index([userId], map: "Payment_userId_idx")
+}
+
+model paymentstatusupdate {
+  id        Int                           @id @default(autoincrement())
+  paymentId Int
+  oldStatus paymentstatusupdate_oldStatus
+  newStatus paymentstatusupdate_newStatus
+  reason    String
+  changedBy Int?
+  createdAt DateTime                      @default(now())
+  payment   payment                       @relation(fields: [paymentId], references: [id], onDelete: Cascade, map: "PaymentStatusUpdate_paymentId_fkey")
+
+  @@index([createdAt], map: "PaymentStatusUpdate_createdAt_idx")
+  @@index([paymentId], map: "PaymentStatusUpdate_paymentId_idx")
+}
+
+model session {
+  id                  Int                @id @default(autoincrement())
+  userId              Int?
+  paymentId           Int?
+  macAddress          String
+  ipAddress           String?
+  startTime           DateTime           @default(now())
+  expiryTime          DateTime
+  disconnectedAt      DateTime?
+  reason              String?
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime
+  voucherRedemptionId Int?
+  payment             payment?           @relation(fields: [paymentId], references: [id], map: "Session_paymentId_fkey")
+  user                user?              @relation(fields: [userId], references: [id], map: "Session_userId_fkey")
+  voucherredemption   voucherredemption? @relation(fields: [voucherRedemptionId], references: [id], map: "Session_voucherRedemptionId_fkey")
+
+  @@index([disconnectedAt], map: "Session_disconnectedAt_idx")
+  @@index([expiryTime], map: "Session_expiryTime_idx")
+  @@index([macAddress], map: "Session_macAddress_idx")
+  @@index([paymentId], map: "Session_paymentId_fkey")
+  @@index([userId], map: "Session_userId_idx")
+  @@index([voucherRedemptionId], map: "Session_voucherRedemptionId_fkey")
+}
+
+model supportrequest {
+  id        Int      @id @default(autoincrement())
+  phone     String
+  message   String
+  createdAt DateTime @default(now())
+}
+
+model systemsettings {
+  id                 Int      @id @default(1)
+  networkName        String   @default("Qonnect")
+  adminEmail         String   @default("admin@qonnect.com")
+  maxConcurrentUsers Int      @default(100)
+  sessionTimeout     Int      @default(2)
+  autoDisconnect     Boolean  @default(true)
+  currency           String   @default("KSh")
+  taxRate            Float    @default(0)
+  paymentGateway     String   @default("mpesa")
+  mpesaTimeout       Int      @default(60)
+  defaultPackage     String   @default("1hour")
+  maintenanceMode    Boolean  @default(false)
+  updatedBy          Int?
+  updatedAt          DateTime
+}
+
+model user {
+  id            Int         @id @default(autoincrement())
+  phone         String      @unique(map: "User_phone_key")
+  macAddress    String      @unique(map: "User_macAddress_key")
+  status        user_status @default(ACTIVE)
+  blockedReason String?
+  lastSeen      DateTime?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime
+  payment       payment[]
+  session       session[]
+
+  @@index([macAddress], map: "User_macAddress_idx")
+  @@index([phone], map: "User_phone_idx")
+  @@index([status], map: "User_status_idx")
+}
+
+model voucher {
+  id                Int                 @id @default(autoincrement())
+  code              String              @unique(map: "Voucher_code_key")
+  planKey           String
+  durationMs        BigInt
+  maxUses           Int                 @default(1)
+  currentUses       Int                 @default(0)
+  expiresAt         DateTime?
+  createdBy         Int?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime
+  voucherredemption voucherredemption[]
+
+  @@index([code], map: "Voucher_code_idx")
+  @@index([createdAt], map: "Voucher_createdAt_idx")
+  @@index([expiresAt], map: "Voucher_expiresAt_idx")
+  @@index([planKey], map: "Voucher_planKey_idx")
+}
+
+model voucherredemption {
+  id         Int       @id @default(autoincrement())
+  voucherId  Int
+  macAddress String
+  ipAddress  String?
+  redeemedAt DateTime  @default(now())
+  session    session[]
+  voucher    voucher   @relation(fields: [voucherId], references: [id], onDelete: Cascade, map: "VoucherRedemption_voucherId_fkey")
+
+  @@index([macAddress], map: "VoucherRedemption_macAddress_idx")
+  @@index([redeemedAt], map: "VoucherRedemption_redeemedAt_idx")
+  @@index([voucherId], map: "VoucherRedemption_voucherId_idx")
+}
+
+enum paymentstatusupdate_oldStatus {
   PENDING
   COMPLETED
   FAILED
@@ -32,236 +185,31 @@ enum PaymentStatus {
   REFUNDED
 }
 
-// ============================================
-// MODELS
-// ============================================
-
-model User {
-  id              Int       @id @default(autoincrement())
-  phone           String    @unique
-  macAddress      String    @unique
-  status          UserStatus @default(ACTIVE)
-  blockedReason   String?
-  
-  totalSpent      Int       @default(0)
-  sessionsCount   Int       @default(0)
-  lastSeen        DateTime?
-  
-  payments        Payment[]
-  sessions        Session[]
-  
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-  
-  @@index([phone])
-  @@index([macAddress])
-  @@index([status])
+enum user_status {
+  ACTIVE
+  EXPIRED
+  BLOCKED
+  INACTIVE
 }
 
-model Payment {
-  id              Int            @id @default(autoincrement())
-  transactionId   String         @unique
-  userId          Int?
-  user            User?          @relation(fields: [userId], references: [id], onDelete: SetNull)
-  
-  phone           String         // Denormalized for audit trail
-  amount          Int            // In KES (e.g., 10 = Ksh 10, 30 = Ksh 30)
-  status          PaymentStatus  @default(PENDING)
-  
-  mpesaRef        String?        @unique @map("mpesa_reference")
-  mpesaReceipt    String?        @unique @map("mpesa_receipt_number")
-  
-  macAddress      String
-  ipAddress       String?
-  
-  expiresAt       DateTime?
-  
-  // Audit trail
-  requestedAt     DateTime       @default(now())
-  completedAt     DateTime?
-  failedAt        DateTime?
-  
-  // Refunds
-  refundedAmount  Int?           @default(0)
-  refundReason    String?
-  refundedAt      DateTime?
-  
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
-  
-  // Status history (audit trail)
-  statusUpdates   PaymentStatusUpdate[]
-  // One payment can have multiple sessions (user connects multiple times)
-  sessions        Session[]
-  
-  @@index([userId])
-  @@index([mpesaRef])
-  @@index([transactionId])
-  @@index([status])
-  @@index([createdAt])
-  @@index([status, createdAt])
-  @@index([phone, status, createdAt])
+enum paymentstatusupdate_newStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  EXPIRED
+  FRAUD_DETECTED
+  VERIFICATION_FAILED
+  COMPLETED_BUT_MAC_FAILED
+  REFUNDED
 }
 
-// ✅ NEW: Track payment status changes for immutability
-model PaymentStatusUpdate {
-  id              Int             @id @default(autoincrement())
-  paymentId       Int
-  payment         Payment         @relation(fields: [paymentId], references: [id], onDelete: Cascade)
-  
-  oldStatus       PaymentStatus
-  newStatus       PaymentStatus
-  
-  reason          String          // "callback_received", "manual_admin", "refund", etc.
-  changedBy       Int?            // Admin user ID if manual change
-  
-  createdAt       DateTime        @default(now())
-  
-  @@index([paymentId])
-  @@index([createdAt])
-}
-
-// ✅ Track user sessions
-model Session {
-  id              Int       @id @default(autoincrement())
-  userId          Int?      // nullable — voucher sessions have no associated User
-  user            User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
-
-  paymentId       Int?
-  payment         Payment?  @relation(fields: [paymentId], references: [id], onDelete: SetNull)
-
-  voucherRedemptionId Int?  // populated when session was started by a voucher
-  voucherRedemption   VoucherRedemption? @relation(fields: [voucherRedemptionId], references: [id], onDelete: SetNull)
-
-  macAddress      String    // User's device MAC
-  ipAddress       String?   // User's IP at connection
-
-  startTime       DateTime  @default(now())
-  expiryTime      DateTime  // When session expires
-  disconnectedAt  DateTime? // When user disconnected
-  reason          String?   // "expired", "admin_disconnect", "idle_or_cap_mikrotik", etc.
-
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-
-  @@index([userId])
-  @@index([macAddress])
-  @@index([expiryTime])
-  @@index([disconnectedAt])
-}
-
-model Admin {
-  id       Int    @id @default(autoincrement())
-  email    String @unique
-  password String
-  
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-
-model SupportRequest {
-  id        Int      @id @default(autoincrement())
-  phone     String
-  message   String
-  createdAt DateTime @default(now())
-}
-
-// ✅ System settings — singleton record (id is always 1)
-model SystemSettings {
-  id                    Int      @id @default(1)
-  
-  // Network settings
-  networkName           String   @default("Qonnect")
-  adminEmail            String   @default("admin@qonnect.com")
-  maxConcurrentUsers    Int      @default(100)
-  sessionTimeout        Int      @default(2) // in hours
-  autoDisconnect        Boolean  @default(true)
-  
-  // Payment settings
-  currency              String   @default("KSh")
-  taxRate               Float    @default(0)
-  paymentGateway        String   @default("mpesa")
-  mpesaTimeout          Int      @default(60) // in seconds
-  defaultPackage        String   @default("1hour")
-  
-  // System settings
-  maintenanceMode       Boolean  @default(false)
-  
-  updatedBy             Int?     // Admin ID who last updated
-  updatedAt             DateTime @updatedAt
-}
-
-// ✅ NEW: Audit log for critical actions
-model AuditLog {
-  id        Int      @id @default(autoincrement())
-  action    String   // "admin_login", "mac_whitelist", "payment_failed", etc.
-  userId    Int?
-  details   String   // JSON string of additional context
-  ip        String?
-  createdAt DateTime @default(now())
-  
-  @@index([action])
-  @@index([userId])
-  @@index([createdAt])
-}
-
-// ============================================
-// VOUCHER SYSTEM
-// ============================================
-
-model Voucher {
-  id          Int       @id @default(autoincrement())
-
-  /// Cryptographically random code — format: XXXX-XXXX-XXXX-XXXX
-  code        String    @unique
-
-  /// Package identifier matching lib/packages.js timeLabel ('1Hr', '4Hrs', '12Hrs', '24Hrs')
-  planKey     String
-
-  /// Session duration in milliseconds (copied from package at creation time)
-  durationMs  BigInt
-
-  /// How many times this voucher may be redeemed (usually 1)
-  maxUses     Int       @default(1)
-
-  /// Running count of successful redemptions
-  currentUses Int       @default(0)
-
-  /// Absolute expiry date — null means never expires
-  expiresAt   DateTime?
-
-  /// Admin who created this batch (null = system-generated)
-  createdBy   Int?
-
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-
-  redemptions VoucherRedemption[]
-
-  @@index([code])
-  @@index([planKey])
-  @@index([expiresAt])
-  @@index([createdAt])
-}
-
-model VoucherRedemption {
-  id         Int      @id @default(autoincrement())
-
-  voucherId  Int
-  voucher    Voucher  @relation(fields: [voucherId], references: [id], onDelete: Cascade)
-
-  /// Device MAC address of the redeemer
-  macAddress String
-
-  /// Client IP at time of redemption
-  ipAddress  String?
-
-  redeemedAt DateTime @default(now())
-
-  /// Sessions started by this redemption
-  sessions   Session[]
-
-  @@index([voucherId])
-  @@index([macAddress])
-  @@index([redeemedAt])
+enum payment_status {
+  PENDING
+  COMPLETED
+  FAILED
+  EXPIRED
+  FRAUD_DETECTED
+  VERIFICATION_FAILED
+  COMPLETED_BUT_MAC_FAILED
+  REFUNDED
 }
