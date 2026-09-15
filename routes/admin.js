@@ -131,13 +131,25 @@ router.get("/admin/summary", authMiddleware, async (req, res) => {
 // Users export endpoint
 router.get("/users/export/csv", authMiddleware, async (req, res) => {
   try {
-    const users = await prisma.user.findMany({ orderBy: { createdAt: 'desc' } });
+    // Fetch users with live aggregation: sum of completed payment amounts
+    // and count of sessions — replaces the removed totalSpent / sessionsCount fields.
+    const users = await prisma.user.findMany({
+      orderBy: { createdAt: 'desc' },
+      include: {
+        _count: { select: { sessions: true } },
+        payments: {
+          where: { status: 'COMPLETED' },
+          select: { amount: true },
+        },
+      },
+    });
+
     const header = [
       'ID',
       'Phone',
       'MAC Address',
       'Status',
-      'Total Spent',
+      'Total Spent (KES)',
       'Sessions Count',
       'Last Seen',
       'Blocked Reason',
@@ -145,18 +157,22 @@ router.get("/users/export/csv", authMiddleware, async (req, res) => {
       'Updated At',
     ].join(',');
 
-    const rows = users.map((user) => [
-      formatCsvValue(user.id),
-      formatCsvValue(user.phone),
-      formatCsvValue(user.macAddress),
-      formatCsvValue(user.status),
-      formatCsvValue(user.totalSpent),
-      formatCsvValue(user.sessionsCount),
-      formatCsvValue(user.lastSeen ? user.lastSeen.toISOString() : ''),
-      formatCsvValue(user.blockedReason || ''),
-      formatCsvValue(user.createdAt.toISOString()),
-      formatCsvValue(user.updatedAt.toISOString()),
-    ].join(','));
+    const rows = users.map((user) => {
+      const totalSpent = user.payments.reduce((sum, p) => sum + p.amount, 0);
+      const sessionsCount = user._count.sessions;
+      return [
+        formatCsvValue(user.id),
+        formatCsvValue(user.phone),
+        formatCsvValue(user.macAddress),
+        formatCsvValue(user.status),
+        formatCsvValue(totalSpent),
+        formatCsvValue(sessionsCount),
+        formatCsvValue(user.lastSeen ? user.lastSeen.toISOString() : ''),
+        formatCsvValue(user.blockedReason || ''),
+        formatCsvValue(user.createdAt.toISOString()),
+        formatCsvValue(user.updatedAt.toISOString()),
+      ].join(',');
+    });
 
     const csv = [header, ...rows].join('\n');
     const filename = `users_${new Date().toISOString().slice(0, 10)}.csv`;
@@ -166,7 +182,7 @@ router.get("/users/export/csv", authMiddleware, async (req, res) => {
     logAudit('users_exported_csv', { count: users.length, admin: req.admin?.id });
     return res.send(csv);
   } catch (error) {
-    console.error('âŒ /users/export/csv error:', error);
+    console.error('❌ /users/export/csv error:', error);
     return res.status(500).json({ success: false, error: 'Failed to export users' });
   }
 });

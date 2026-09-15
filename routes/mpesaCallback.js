@@ -99,11 +99,42 @@ router.post(
 );
 
 /**
+ * Helper: update a payment's status AND write a PaymentStatusUpdate audit row
+ * in the same atomic operation.
+ *
+ * Issue 3 Fix: every status transition must produce an immutable audit record.
+ *
+ * @param {Object} client - prisma or tx (transaction client)
+ * @param {number} paymentId
+ * @param {PaymentStatus} oldStatus
+ * @param {PaymentStatus} newStatus
+ * @param {string} reason - human-readable reason e.g. 'callback_received'
+ * @param {Object} [extraData] - additional fields to set on the Payment
+ */
+async function updatePaymentStatusWithAudit(client, paymentId, oldStatus, newStatus, reason, extraData = {}) {
+  return client.$transaction([
+    client.payment.update({
+      where: { id: paymentId },
+      data: { status: newStatus, ...extraData },
+    }),
+    client.paymentStatusUpdate.create({
+      data: {
+        paymentId,
+        oldStatus,
+        newStatus,
+        reason,
+      },
+    }),
+  ]);
+}
+
+/**
  * Background job processor for secure payment processing
  * Uses BullMQ worker pattern
  */
 async function setupPaymentWorker() {
   const { Worker } = require('bullmq');
+  const { getSessionExpiryQueue } = require('../workers/timeoutWorkers');
   // BOOT-5 FIX: Use the shared Redis singleton instead of creating a private connection
   const connection = getRedisClient();
   if (!connection) {
@@ -142,10 +173,12 @@ async function setupPaymentWorker() {
         if (resultCode !== 0) {
           console.log(`❌ Payment declined/cancelled: ResultCode=${resultCode}`);
 
-          await prisma.payment.update({
-            where: { id: payment.id },
-            data: { status: PaymentStatus.FAILED }
-          });
+          // Issue 3 Fix: write PaymentStatusUpdate alongside the status change
+          await updatePaymentStatusWithAudit(
+            prisma, payment.id,
+            payment.status, PaymentStatus.FAILED,
+            'callback_received_non_zero_result'
+          );
 
           sendPaymentStatus(payment.transactionId, {
             transactionId: payment.transactionId,
@@ -171,10 +204,12 @@ async function setupPaymentWorker() {
             `🔴 FRAUD: Amount mismatch. Payment=${payment.amount}, Callback=${callbackAmount}`
           );
 
-          await prisma.payment.update({
-            where: { id: payment.id },
-            data: { status: PaymentStatus.FRAUD_DETECTED }
-          });
+          // Issue 3 Fix: write PaymentStatusUpdate alongside the status change
+          await updatePaymentStatusWithAudit(
+            prisma, payment.id,
+            payment.status, PaymentStatus.FRAUD_DETECTED,
+            'fraud_detected_amount_mismatch'
+          );
 
           sendPaymentStatus(payment.transactionId, {
             transactionId: payment.transactionId,
@@ -204,10 +239,12 @@ async function setupPaymentWorker() {
         if (!apiVerification.verified) {
           console.error(`❌ M-Pesa API verification failed:`, apiVerification.error);
 
-          await prisma.payment.update({
-            where: { id: payment.id },
-            data: { status: PaymentStatus.VERIFICATION_FAILED }
-          });
+          // Issue 3 Fix: write PaymentStatusUpdate alongside the status change
+          await updatePaymentStatusWithAudit(
+            prisma, payment.id,
+            payment.status, PaymentStatus.VERIFICATION_FAILED,
+            'mpesa_api_verification_failed'
+          );
 
           logAudit('payment_verification_failed', {
             checkoutId,
@@ -267,11 +304,44 @@ async function setupPaymentWorker() {
                 expiresAt: sessionDetails.expiresAt,
               },
             });
-            
+
+            // Issue 3 Fix: write PaymentStatusUpdate INSIDE the same transaction
+            // so status change + audit row are always atomically consistent.
+            await tx.paymentStatusUpdate.create({
+              data: {
+                paymentId: payment.id,
+                oldStatus: payment.status,
+                newStatus: PaymentStatus.COMPLETED,
+                reason: 'callback_received_successful',
+              },
+            });
+
             console.log('✅ DB Transaction: Payment marked as completed and session created/extended.');
             return sessionDetails;
           });
-          
+
+          // Issue 2 Fix: enqueue BullMQ session expiry job AFTER the transaction commits.
+          // Enqueueing inside the $transaction is a bug — if TX rolls back, the job fires
+          // for a session row that was never actually committed.
+          const sessionExpiryQueue = getSessionExpiryQueue();
+          if (sessionExpiryQueue && sessionResult.queueJob) {
+            const { action, jobId, sessionId, macAddress, delay } = sessionResult.queueJob;
+            if (action === 'reschedule') {
+              // Remove stale job first, then re-add
+              await sessionExpiryQueue.remove(jobId).catch(() => {});
+            }
+            await sessionExpiryQueue.add(
+              'expire-session',
+              { sessionId, macAddress },
+              {
+                delay,
+                jobId,
+                removeOnComplete: true,
+              }
+            );
+            console.log(`[Expiry Job] ${action === 'reschedule' ? 'Rescheduled' : 'Scheduled'} for session ${sessionId}`);
+          }
+
           logAudit('payment_db_transaction_success', {
             checkoutId,
             phone: payment.phone,
@@ -296,11 +366,12 @@ async function setupPaymentWorker() {
           // The core payment is already committed. We just flag that this part failed.
           console.error(`⚠️ MAC whitelist failed after successful payment: ${mikrotikResult.message}`);
 
-          // Update status to flag for retry
-          await prisma.payment.update({
-            where: { id: payment.id },
-            data: { status: PaymentStatus.COMPLETED_BUT_MAC_FAILED }
-          });
+          // Issue 3 Fix: wrap in transaction so audit row is written atomically
+          await updatePaymentStatusWithAudit(
+            prisma, payment.id,
+            PaymentStatus.COMPLETED, PaymentStatus.COMPLETED_BUT_MAC_FAILED,
+            'mac_whitelist_failed_post_payment'
+          );
 
           logAudit('payment_mac_whitelist_failed', {
             checkoutId,

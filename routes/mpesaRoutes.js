@@ -13,6 +13,7 @@ const { validatePaymentInitiationMiddleware } = require("../middleware/validatio
 const { paymentLimiter, apiLimiter } = require("../middleware/rateLimit");
 const { verifyMACvsARP } = require('../utils/arpLookup');
 const { logAudit } = require('../utils/auditLogger');
+const { getRedisClient } = require('../config/redis');
 
 const { PaymentStatus } = require("@prisma/client");
 const { getPaymentTimeoutQueue } = require("../workers/timeoutWorkers");
@@ -36,116 +37,150 @@ router.post(
   paymentLimiter,
   validatePaymentInitiationMiddleware,
   async (req, res) => {
+    const { phone, mac, amount, package: pkg } = req.validatedPayment;
+
+    // 🔒 CRITICAL FIX (Issue 1): The previous findFirst → check → create pattern
+    // is a TOCTOU race condition. Two concurrent requests for the same phone both
+    // pass the findFirst check before either creates a payment row.
+    //
+    // Fix: Acquire a Redis distributed lock (SET NX PX) keyed on the phone number
+    // for the duration of the entire initiation flow (STK Push + DB insert).
+    // The lock TTL is 70 s — longer than the STK Push timeout so it always clears.
+    // If Redis is unavailable we fall back to a DB-level check (best-effort).
+    const LOCK_TTL_MS = 70_000;
+    const lockKey = `payment_lock:${phone}`;
+    let lockAcquired = false;
+    const redis = getRedisClient();
+
     try {
-      const { phone, mac, amount, package: pkg } = req.validatedPayment;
-
-      // 🔒 CRITICAL: Check for duplicate/double-click submissions
-      // Prevent multiple STK Push requests for same phone within 60 seconds
-      const recentPending = await prisma.payment.findFirst({
-        where: {
-          phone,
-          status: { in: [PaymentStatus.PENDING, PaymentStatus.COMPLETED] },
-          createdAt: {
-            gte: new Date(Date.now() - 60 * 1000) // Last 60 seconds
+      if (redis) {
+        // SET key value NX PX ttl — returns 'OK' if acquired, null if already held
+        const result = await redis.set(lockKey, '1', 'NX', 'PX', LOCK_TTL_MS);
+        if (result !== 'OK') {
+          return res.status(409).json({
+            success: false,
+            error: 'Payment already in progress',
+            message: 'A payment is already being processed for this number. Please wait for confirmation.'
+          });
+        }
+        lockAcquired = true;
+      } else {
+        // Redis unavailable — fall back to DB check (not race-safe but better than nothing)
+        console.warn('⚠️ Redis unavailable — using DB-level duplicate check (not race-safe)');
+        const recentPending = await prisma.payment.findFirst({
+          where: {
+            phone,
+            status: { in: [PaymentStatus.PENDING, PaymentStatus.COMPLETED] },
+            createdAt: { gte: new Date(Date.now() - 60 * 1000) }
           }
+        });
+        if (recentPending) {
+          return res.status(409).json({
+            success: false,
+            error: 'Payment already in progress',
+            message: 'A payment is already being processed for this number. Please wait for confirmation.'
+          });
         }
-      });
-
-      if (recentPending) {
-        return res.status(409).json({
-          success: false,
-          error: 'Payment already in progress',
-          message: 'A payment is already being processed for this number. Please wait for confirmation.'
-        });
       }
 
-      // 🔍 ARP cross-check: verify submitted MAC matches router ARP entry for this IP.
-      // Fails open (just logs) when ARP is unavailable (cloud/VPN deployments).
-      const arpResult = await verifyMACvsARP(req.ip, mac);
-      if (arpResult.reason === 'mismatch') {
-        console.warn(
-          `⚠️  MAC mismatch for ${req.ip}: submitted=${mac}, arp=${arpResult.arpMAC}`
-        );
-        logAudit('payment_mac_arp_mismatch', {
-          ip: req.ip,
-          submittedMAC: mac,
-          arpMAC: arpResult.arpMAC,
-        });
-        // Block the payment — the client is presenting a MAC that doesn’t match
-        // what the router recorded for their IP address.
-        return res.status(400).json({
-          success: false,
-          error: 'MAC address verification failed',
-          message: 'The MAC address provided does not match your device. Please reconnect to the hotspot and try again.',
-        });
-      }
-
-      if (arpResult.reason === 'arp_unavailable') {
-        // Soft warning only — don’t block; allow payment to continue.
-        console.warn(`ℹ️  ARP unavailable for ${req.ip} — MAC unverified (non-blocking)`);
-      }
-
-      // Generate unique transaction ID with randomness
-      const crypto = require('crypto');
-      const transactionId = `TXN_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
-
-      // Step 1: Call M-Pesa STK Push API FIRST
-      console.log(`Initiating STK Push for ${phone} with amount ${amount}`);
-      const mpesaResponse = await stkPush(phone, amount, transactionId);
-
-      if (!mpesaResponse || !mpesaResponse.CheckoutRequestID) {
-        console.error(`❌ STK Push failed for transaction attempt ${transactionId}. M-Pesa API returned no CheckoutRequestID.`);
-        // Do not create a payment record if the API call itself fails.
-        return res.status(500).json({
-          success: false,
-          error: 'Failed to initiate payment',
-          message: process.env.NODE_ENV === 'production'
-            ? 'Could not connect to payment service. Please try again.'
-            : 'M-Pesa API returned no CheckoutRequestID'
-        });
-      }
-      
-      console.log(`✅ STK Push sent: ${transactionId} → ${mpesaResponse.CheckoutRequestID}`);
-
-      // Step 2: Create the payment record in one atomic operation
-      const payment = await prisma.payment.create({
-        data: {
-          phone,
-          amount,
-          transactionId,
-          macAddress: mac,
-          status: PaymentStatus.PENDING,
-          ipAddress: req.ip,
-          mpesaRef: mpesaResponse.CheckoutRequestID // Save the reference immediately
+      try {
+        // 🔍 ARP cross-check: verify submitted MAC matches router ARP entry for this IP.
+        // Fails open (just logs) when ARP is unavailable (cloud/VPN deployments).
+        const arpResult = await verifyMACvsARP(req.ip, mac);
+        if (arpResult.reason === 'mismatch') {
+          console.warn(
+            `⚠️  MAC mismatch for ${req.ip}: submitted=${mac}, arp=${arpResult.arpMAC}`
+          );
+          logAudit('payment_mac_arp_mismatch', {
+            ip: req.ip,
+            submittedMAC: mac,
+            arpMAC: arpResult.arpMAC,
+          });
+          // Block the payment — the client is presenting a MAC that doesn't match
+          // what the router recorded for their IP address.
+          return res.status(400).json({
+            success: false,
+            error: 'MAC address verification failed',
+            message: 'The MAC address provided does not match your device. Please reconnect to the hotspot and try again.',
+          });
         }
-      });
-      console.log(`📝 Payment record created: ${transactionId}`);
 
-      // Step 3: Schedule a job to time out the payment if no callback is received
-      const paymentTimeoutQueue = getPaymentTimeoutQueue();
-      if (paymentTimeoutQueue) {
-        await paymentTimeoutQueue.add(
-          'check-timeout',
-          { transactionId: payment.transactionId },
-          {
-            delay: 100000, // 100 seconds
-            removeOnComplete: true,
-            jobId: `timeout-${payment.transactionId}` // Deduplication
+        if (arpResult.reason === 'arp_unavailable') {
+          // Soft warning only — don't block; allow payment to continue.
+          console.warn(`ℹ️  ARP unavailable for ${req.ip} — MAC unverified (non-blocking)`);
+        }
+
+        // Generate unique transaction ID with randomness
+        const crypto = require('crypto');
+        const transactionId = `TXN_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
+
+        // Step 1: Call M-Pesa STK Push API FIRST
+        console.log(`Initiating STK Push for ${phone} with amount ${amount}`);
+        const mpesaResponse = await stkPush(phone, amount, transactionId);
+
+        if (!mpesaResponse || !mpesaResponse.CheckoutRequestID) {
+          console.error(`❌ STK Push failed for transaction attempt ${transactionId}. M-Pesa API returned no CheckoutRequestID.`);
+          // Do not create a payment record if the API call itself fails.
+          return res.status(500).json({
+            success: false,
+            error: 'Failed to initiate payment',
+            message: process.env.NODE_ENV === 'production'
+              ? 'Could not connect to payment service. Please try again.'
+              : 'M-Pesa API returned no CheckoutRequestID'
+          });
+        }
+        
+        console.log(`✅ STK Push sent: ${transactionId} → ${mpesaResponse.CheckoutRequestID}`);
+
+        // Step 2: Create the payment record in one atomic operation
+        const payment = await prisma.payment.create({
+          data: {
+            phone,
+            amount,
+            transactionId,
+            macAddress: mac,
+            status: PaymentStatus.PENDING,
+            ipAddress: req.ip,
+            mpesaRef: mpesaResponse.CheckoutRequestID // Save the reference immediately
           }
-        );
-        console.log(`⏳ Timeout job scheduled for ${payment.transactionId}`);
-      }
+        });
+        console.log(`📝 Payment record created: ${transactionId}`);
 
-      return res.json({
-        success: true,
-        data: {
-          transactionId,
-          mpesaRef: mpesaResponse.CheckoutRequestID,
-          status: 'pending', // Keep lowercase for frontend compatibility
-          expiresAt: null,
-          message: 'Enter PIN on your phone to complete payment'
+        // Step 3: Schedule a job to time out the payment if no callback is received
+        const paymentTimeoutQueue = getPaymentTimeoutQueue();
+        if (paymentTimeoutQueue) {
+          await paymentTimeoutQueue.add(
+            'check-timeout',
+            { transactionId: payment.transactionId },
+            {
+              delay: 100000, // 100 seconds
+              removeOnComplete: true,
+              jobId: `timeout-${payment.transactionId}` // Deduplication
+            }
+          );
+          console.log(`⏳ Timeout job scheduled for ${payment.transactionId}`);
         }
-      });
+
+        return res.json({
+          success: true,
+          data: {
+            transactionId,
+            mpesaRef: mpesaResponse.CheckoutRequestID,
+            status: 'pending', // Keep lowercase for frontend compatibility
+            expiresAt: null,
+            message: 'Enter PIN on your phone to complete payment'
+          }
+        });
+      } finally {
+        // 🔓 Always release the lock — whether success, error, or early return.
+        // If DB create succeeded, the lock held just long enough to prevent a duplicate;
+        // the mpesaRef uniqueness constraint is the permanent guard going forward.
+        if (lockAcquired && redis) {
+          await redis.del(lockKey).catch((err) =>
+            console.error('⚠️ Failed to release payment lock:', err.message)
+          );
+        }
+      }
     } catch (error) {
       console.error("❌ /v1/payments/initiate error:", error);
 
@@ -158,6 +193,7 @@ router.post(
     }
   }
 );
+
 
 /**
  * GET /api/v1/payments/status/:transactionId
