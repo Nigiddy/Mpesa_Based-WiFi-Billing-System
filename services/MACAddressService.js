@@ -166,15 +166,63 @@ async function detectPotentialSpoofing(mac, ip) {
 async function registerOrExtendMACSession(params, prismaClient = prisma) {
   const { mac, phone, ip, expiryDuration, paymentId } = params;
 
-  try {
-    const normalizedMAC = mac.toUpperCase();
+  const normalizedMAC = mac.toUpperCase();
 
-    const formatValidation = validateMACFormat(normalizedMAC);
-    if (!formatValidation.valid) {
-      return { success: false, error: formatValidation.error };
-    }
+  const formatValidation = validateMACFormat(normalizedMAC);
+  if (!formatValidation.valid) {
+    return { success: false, error: formatValidation.error };
+  }
 
-    const activeSession = await prismaClient.session.findFirst({
+  const activeSession = await prismaClient.session.findFirst({
+    where: {
+      macAddress: normalizedMAC,
+      disconnectedAt: null,
+      expiryTime: { gt: new Date() },
+    },
+  });
+
+  if (activeSession) {
+    // Extend the existing session
+    const newExpiryTime = new Date(activeSession.expiryTime.getTime() + expiryDuration);
+    const updatedSession = await prismaClient.session.update({
+      where: { id: activeSession.id },
+      data: {
+        expiryTime: newExpiryTime,
+        paymentId: paymentId, // Link to the new payment
+      },
+    });
+
+    const jobId = `session-expiry-${activeSession.id}`;
+    console.log(`✅ Session extended for ${normalizedMAC}. New expiry: ${newExpiryTime.toISOString()}`);
+    return {
+      success: true,
+      sessionId: updatedSession.id,
+      expiresAt: newExpiryTime,
+      action: 'extended',
+      // Caller MUST enqueue this job after the transaction commits
+      queueJob: {
+        action: 'reschedule',
+        jobId,
+        sessionId: activeSession.id,
+        macAddress: normalizedMAC,
+        delay: newExpiryTime.getTime() - Date.now(),
+      },
+    };
+  } else {
+    // CONCURRENCY FIX (Issue 6): Acquire a row-level lock before inserting
+    // a new session so that two concurrent callbacks for the same MAC cannot
+    // both pass the findFirst check above and both insert a session.
+    // We lock on the User row (or a synthetic advisory key) using raw SQL.
+    // MySQL: SELECT GET_LOCK('session_mac_<MAC>', 5) — releases on TX end.
+    const lockKey = `session_mac_${normalizedMAC}`;
+    await prismaClient.$queryRawUnsafe(
+      `SELECT GET_LOCK(?, 5) AS locked`,
+      lockKey
+    );
+
+    // Re-check inside the lock in case another request created a session
+    // between our initial findFirst and acquiring the lock.
+    const sessionAfterLock = await prismaClient.session.findFirst({
       where: {
         macAddress: normalizedMAC,
         disconnectedAt: null,
@@ -182,149 +230,119 @@ async function registerOrExtendMACSession(params, prismaClient = prisma) {
       },
     });
 
-    if (activeSession) {
-      // Extend the existing session
-      const newExpiryTime = new Date(activeSession.expiryTime.getTime() + expiryDuration);
+    if (sessionAfterLock) {
+      // Another concurrent request already created a session — extend it instead.
+      const newExpiryTime = new Date(sessionAfterLock.expiryTime.getTime() + expiryDuration);
       const updatedSession = await prismaClient.session.update({
-        where: { id: activeSession.id },
-        data: {
-          expiryTime: newExpiryTime,
-          paymentId: paymentId, // Link to the new payment
-        },
+        where: { id: sessionAfterLock.id },
+        data: { expiryTime: newExpiryTime, paymentId },
       });
-
-      const jobId = `session-expiry-${activeSession.id}`;
-      console.log(`✅ Session extended for ${normalizedMAC}. New expiry: ${newExpiryTime.toISOString()}`);
+      const jobId = `session-expiry-${sessionAfterLock.id}`;
+      console.log(`✅ Session extended (post-lock) for ${normalizedMAC}. New expiry: ${newExpiryTime.toISOString()}`);
       return {
         success: true,
         sessionId: updatedSession.id,
         expiresAt: newExpiryTime,
         action: 'extended',
-        // Caller MUST enqueue this job after the transaction commits
         queueJob: {
           action: 'reschedule',
           jobId,
-          sessionId: activeSession.id,
+          sessionId: sessionAfterLock.id,
           macAddress: normalizedMAC,
           delay: newExpiryTime.getTime() - Date.now(),
         },
       };
-    } else {
-      // CONCURRENCY FIX (Issue 6): Acquire a row-level lock before inserting
-      // a new session so that two concurrent callbacks for the same MAC cannot
-      // both pass the findFirst check above and both insert a session.
-      // We lock on the User row (or a synthetic advisory key) using raw SQL.
-      // MySQL: SELECT GET_LOCK('session_mac_<MAC>', 5) — releases on TX end.
-      const lockKey = `session_mac_${normalizedMAC}`;
-      await prismaClient.$queryRawUnsafe(
-        `SELECT GET_LOCK(?, 5) AS locked`,
-        lockKey
-      );
-
-      // Re-check inside the lock in case another request created a session
-      // between our initial findFirst and acquiring the lock.
-      const sessionAfterLock = await prismaClient.session.findFirst({
-        where: {
-          macAddress: normalizedMAC,
-          disconnectedAt: null,
-          expiryTime: { gt: new Date() },
-        },
-      });
-
-      if (sessionAfterLock) {
-        // Another concurrent request already created a session — extend it instead.
-        const newExpiryTime = new Date(sessionAfterLock.expiryTime.getTime() + expiryDuration);
-        const updatedSession = await prismaClient.session.update({
-          where: { id: sessionAfterLock.id },
-          data: { expiryTime: newExpiryTime, paymentId },
-        });
-        const jobId = `session-expiry-${sessionAfterLock.id}`;
-        console.log(`✅ Session extended (post-lock) for ${normalizedMAC}. New expiry: ${newExpiryTime.toISOString()}`);
-        return {
-          success: true,
-          sessionId: updatedSession.id,
-          expiresAt: newExpiryTime,
-          action: 'extended',
-          queueJob: {
-            action: 'reschedule',
-            jobId,
-            sessionId: sessionAfterLock.id,
-            macAddress: normalizedMAC,
-            delay: newExpiryTime.getTime() - Date.now(),
-          },
-        };
-      }
-
-      // BUG FIX (C-8): The original upsert was a unique-constraint trap.
-      // User.macAddress is @unique. Three edge-cases must be handled:
-      //
-      //  a) Returning user, same device → update lastSeen + MAC (idempotent)
-      //  b) Returning user, new device  → update lastSeen + MAC (device changed)
-      //  c) New phone, MAC already linked to a different user → update that
-      //     user's phone (device handed off) rather than crashing
-      //
-      // We use a findFirst + update/create pattern inside the existing transaction
-      // (prismaClient here is already `tx` when called from within $transaction).
-
-      let user = await prismaClient.user.findUnique({ where: { phone } });
-
-      if (user) {
-        // Case a/b: Known phone — update MAC + lastSeen
-        user = await prismaClient.user.update({
-          where: { id: user.id },
-          data: { macAddress: normalizedMAC, lastSeen: new Date(), status: 'ACTIVE' },
-        });
-      } else {
-        // Check if the MAC is already registered to a different account
-        const macOwner = await prismaClient.user.findUnique({ where: { macAddress: normalizedMAC } });
-        if (macOwner) {
-          // Case c: Device transferred to a new phone — update the owner's phone number
-          user = await prismaClient.user.update({
-            where: { id: macOwner.id },
-            data: { phone, lastSeen: new Date(), status: 'ACTIVE' },
-          });
-        } else {
-          // Brand new user on a new device
-          user = await prismaClient.user.create({
-            data: { phone, macAddress: normalizedMAC, status: 'ACTIVE' },
-          });
-        }
-      }
-
-      const newExpiryTime = new Date(Date.now() + expiryDuration);
-      const newSession = await prismaClient.session.create({
-        data: {
-          userId: user.id,
-          macAddress: normalizedMAC,
-          ipAddress: ip,
-          expiryTime: newExpiryTime,
-          startTime: new Date(),
-          paymentId,
-        },
-      });
-
-      const jobId = `session-expiry-${newSession.id}`;
-      const delay = newExpiryTime.getTime() - Date.now();
-
-      console.log(`✅ New session registered for ${normalizedMAC}. Expires: ${newExpiryTime.toISOString()}`);
-      return {
-        success: true,
-        sessionId: newSession.id,
-        expiresAt: newExpiryTime,
-        action: 'created',
-        // Caller MUST enqueue this job after the transaction commits
-        queueJob: delay > 0 ? {
-          action: 'create',
-          jobId,
-          sessionId: newSession.id,
-          macAddress: normalizedMAC,
-          delay,
-        } : null,
-      };
     }
-  } catch (error) {
-    console.error('Error registering or extending MAC session:', error);
-    return { success: false, error: error.message };
+
+    // BUG FIX (C-8): The original upsert was a unique-constraint trap.
+    // User.macAddress is @unique. Three edge-cases must be handled:
+    //
+    //  a) Returning user, same device → update lastSeen + MAC (idempotent)
+    //  b) Returning user, new device  → update lastSeen + MAC (device changed)
+    //  c) New phone, MAC already linked to a different user → REFUSE and audit
+    //     (H-2 fix: do NOT silently overwrite the existing user's phone number)
+    //
+    // We use a findFirst + update/create pattern inside the existing transaction
+    // (prismaClient here is already `tx` when called from within $transaction).
+
+    let user = await prismaClient.user.findUnique({ where: { phone } });
+
+    if (user) {
+      // Case a/b: Known phone — update MAC + lastSeen
+      user = await prismaClient.user.update({
+        where: { id: user.id },
+        data: { macAddress: normalizedMAC, lastSeen: new Date(), status: 'ACTIVE' },
+      });
+    } else {
+      // Check if the MAC is already registered to a different account
+      const macOwner = await prismaClient.user.findUnique({ where: { macAddress: normalizedMAC } });
+      if (macOwner) {
+        // Case c (H-2): MAC is owned by a DIFFERENT phone number.
+        // Silently overwriting macOwner.phone is dangerous — this could be a
+        // spoofing attempt or a mis-keyed phone number.  Refuse the operation,
+        // record a SUSPICIOUS_MAC_REASSIGNMENT audit event, and let the caller
+        // decide how to handle it (e.g. prompt the user to contact support).
+        console.warn(
+          `⚠️  SUSPICIOUS: MAC ${normalizedMAC} is owned by phone ${macOwner.phone} ` +
+          `but a session was requested for phone ${phone}. Refusing reassignment.`
+        );
+        await prismaClient.auditlog.create({
+          data: {
+            action: 'SUSPICIOUS_MAC_REASSIGNMENT',
+            userId: macOwner.id,
+            details: JSON.stringify({
+              mac: normalizedMAC,
+              existingPhone: macOwner.phone,
+              requestedPhone: phone,
+              paymentId,
+              ip,
+            }),
+            ip,
+          },
+        });
+        return {
+          success: false,
+          error: 'MAC address is registered to a different account. Please contact support.',
+          code: 'MAC_OWNERSHIP_CONFLICT',
+        };
+      } else {
+        // Brand new user on a new device
+        user = await prismaClient.user.create({
+          data: { phone, macAddress: normalizedMAC, status: 'ACTIVE' },
+        });
+      }
+    }
+
+    const newExpiryTime = new Date(Date.now() + expiryDuration);
+    const newSession = await prismaClient.session.create({
+      data: {
+        userId: user.id,
+        macAddress: normalizedMAC,
+        ipAddress: ip,
+        expiryTime: newExpiryTime,
+        startTime: new Date(),
+        paymentId,
+      },
+    });
+
+    const jobId = `session-expiry-${newSession.id}`;
+    const delay = newExpiryTime.getTime() - Date.now();
+
+    console.log(`✅ New session registered for ${normalizedMAC}. Expires: ${newExpiryTime.toISOString()}`);
+    return {
+      success: true,
+      sessionId: newSession.id,
+      expiresAt: newExpiryTime,
+      action: 'created',
+      // Caller MUST enqueue this job after the transaction commits
+      queueJob: delay > 0 ? {
+        action: 'create',
+        jobId,
+        sessionId: newSession.id,
+        macAddress: normalizedMAC,
+        delay,
+      } : null,
+    };
   }
 }
 
