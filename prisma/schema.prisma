@@ -19,7 +19,7 @@ model auditlog {
   id        Int      @id @default(autoincrement())
   action    String
   userId    Int?
-  details   String
+  details   String @db.Text
   ip        String?
   createdAt DateTime @default(now())
 
@@ -103,7 +103,7 @@ model session {
 model supportrequest {
   id        Int      @id @default(autoincrement())
   phone     String
-  message   String
+  message   String @db.Text
   createdAt DateTime @default(now())
 }
 
