@@ -249,7 +249,13 @@ const sessionSyncWorker = sessionSyncQueue ? new Worker(
     for (const session of activeSessions) {
       const mac = session.macAddress.toUpperCase();
       if (!activeMACsOnRouter.has(mac)) {
-        // Device was kicked by MikroTik (idle-timeout or data cap)
+        // MikroTik's idle-timeout fired: the *active session* was dropped but the
+        // /ip/hotspot/user entry is still present, allowing free re-auth.
+        // Remove the user entry explicitly so the device must pay again.
+        disconnectByMac(mac).catch((e) =>
+          console.error(`[Session Sync] disconnectByMac failed for ${mac}:`, e.message)
+        );
+
         await prisma.session.update({
           where: { id: session.id },
           data: {

@@ -1,5 +1,5 @@
 /**
- * MikroTik Integration Service (v4 — production-hardened)
+ * MikroTik Integration Service (v5 — per-plan profiles + enforcement)
  *
  * Architecture: Uses /ip/hotspot/user (not ip-binding/bypassed) so that:
  *  - MikroTik profile idle-timeout natively kicks idle devices
@@ -8,7 +8,7 @@
  *
  * MikroTik prerequisite:
  *  - Hotspot must be configured to allow MAC-address login (no password popup)
- *  - ensureHotspotProfiles() is called on app startup to create the required profile
+ *  - ensureHotspotProfiles() is called on app startup to create all plan profiles
  *
  * Production changes (v4):
  *  - Persistent singleton connection with auto-reconnect (P-1)
@@ -17,11 +17,17 @@
  *  - All client.write() calls wrapped with a 4-second app-level timeout (P-4)
  *  - Socket-level timeout reduced to 5 s (P-4)
  *  - closeMikrotikConnection() exported for graceful shutdown (P-5)
+ *
+ * New in v5:
+ *  - One RouterOS hotspot user-profile per plan, each with rate-limit (F-1, F-2)
+ *  - whitelistMAC() assigns the per-plan profile (F-1, F-2)
+ *  - ensureHotspotProfiles() loops PACKAGES and upserts all plan profiles (F-1)
  */
 
 require("dotenv").config();
 const { RouterOSAPI } = require("node-routeros");
 const { logAudit } = require("../utils/auditLogger");
+const { PACKAGES } = require("../lib/packages");
 
 const MIKROTIK_ENABLED =
   String(process.env.MIKROTIK_ENABLED || "false").toLowerCase() === "true";
@@ -200,9 +206,14 @@ async function closeMikrotikConnection() {
 // ---------------------------------------------------------------------------
 
 /**
- * Create / update the Qonnect hotspot user-profile on MikroTik.
+ * Create / update one RouterOS hotspot user-profile for every plan in PACKAGES.
  * Must be called once at application startup.
- * Sets idle-timeout on the profile so MikroTik natively disconnects idle users.
+ *
+ * Each profile carries:
+ *  - rate-limit     : per-plan download/upload speed cap (e.g. "2M/1M")
+ *  - idle-timeout   : kicks devices that stop sending traffic
+ *  - session-timeout: 0 — the app handles hard expiry via BullMQ
+ *  - keepalive-timeout: 2 minutes
  */
 async function ensureHotspotProfiles() {
   const client = await getMikrotikClient();
@@ -212,43 +223,52 @@ async function ensureHotspotProfiles() {
   }
 
   try {
-    const profiles = await withTimeout(
+    // Fetch all existing profiles once (avoids N round-trips for the exists check)
+    const existing = await withTimeout(
       client.write(["/ip/hotspot/user-profile/print"]),
       4000,
       "ensureHotspotProfiles/print"
     );
-    const existing = (profiles || []).find((p) => p.name === HOTSPOT_PROFILE);
-    const idleFmt = fmtSeconds(IDLE_TIMEOUT_SEC);
+    const existingByName = new Map((existing || []).map((p) => [p.name, p]));
 
-    const profileParams = {
-      name: HOTSPOT_PROFILE,
-      "idle-timeout": idleFmt,
-      "session-timeout": "0",      // app handles hard expiry via BullMQ
-      "keepalive-timeout": "00:02:00",
-    };
+    const results = [];
+    for (const pkg of Object.values(PACKAGES)) {
+      const { profileName, rateLimit, idleTimeoutSec } = pkg;
+      const idleFmt = fmtSeconds(idleTimeoutSec || IDLE_TIMEOUT_SEC);
 
-    if (existing) {
-      await withTimeout(
-        client.write(["/ip/hotspot/user-profile/set"], {
-          ".id": existing[".id"],
-          "idle-timeout": idleFmt,
-          "session-timeout": "0",
-          "keepalive-timeout": "00:02:00",
-        }),
-        4000,
-        "ensureHotspotProfiles/set"
-      );
-      console.log(`✅ MikroTik profile '${HOTSPOT_PROFILE}' updated (idle-timeout=${idleFmt})`);
-    } else {
-      await withTimeout(
-        client.write(["/ip/hotspot/user-profile/add"], profileParams),
-        4000,
-        "ensureHotspotProfiles/add"
-      );
-      console.log(`✅ MikroTik profile '${HOTSPOT_PROFILE}' created (idle-timeout=${idleFmt})`);
+      const profileParams = {
+        "idle-timeout":     idleFmt,
+        "session-timeout":  "0",          // BullMQ handles hard expiry
+        "keepalive-timeout": "00:02:00",
+        "rate-limit":       rateLimit,
+      };
+
+      const found = existingByName.get(profileName);
+      if (found) {
+        await withTimeout(
+          client.write(["/ip/hotspot/user-profile/set"], {
+            ".id": found[".id"],
+            ...profileParams,
+          }),
+          4000,
+          `ensureHotspotProfiles/set/${profileName}`
+        );
+        console.log(`✅ MikroTik profile '${profileName}' updated (rate-limit=${rateLimit}, idle=${idleFmt})`);
+      } else {
+        await withTimeout(
+          client.write(["/ip/hotspot/user-profile/add"], {
+            name: profileName,
+            ...profileParams,
+          }),
+          4000,
+          `ensureHotspotProfiles/add/${profileName}`
+        );
+        console.log(`✅ MikroTik profile '${profileName}' created (rate-limit=${rateLimit}, idle=${idleFmt})`);
+      }
+      results.push({ profileName, rateLimit, action: found ? "updated" : "created" });
     }
 
-    return { success: true };
+    return { success: true, profiles: results };
   } catch (err) {
     console.error("❌ MikroTik profile setup failed:", err.message);
     logAudit("mikrotik_profile_setup_error", { error: err.message });
@@ -322,12 +342,15 @@ async function whitelistMAC(macAddress, timeLabel, pkg = null) {
       );
     }
 
-    // Build the new hotspot user entry
+    // Build the new hotspot user entry.
+    // Assign the per-plan profile so the router enforces the correct speed cap.
+    // Fall back to HOTSPOT_PROFILE only if no package was supplied.
+    const assignedProfile = pkg?.profileName || HOTSPOT_PROFILE;
     const userEntry = {
       name: mac,
       "mac-address": mac,
       password: "",                      // empty = MAC-only authentication
-      profile: HOTSPOT_PROFILE,
+      profile: assignedProfile,
       comment: `Qonnect_${timeLabel}_${new Date().toISOString()}`,
     };
 

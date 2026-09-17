@@ -97,6 +97,11 @@ const CONDITIONAL_SECRETS = {
     requiredIf: () => process.env.MIKROTIK_ENABLED === 'true',
     description: 'MikroTik password'
   },
+  MIKROTIK_USE_TLS: {
+    requiredIf: () => process.env.MIKROTIK_ENABLED === 'true',
+    pattern: /^(true|false)$/,
+    description: 'Enable TLS for MikroTik API connection (true = port 8729/api-ssl, false = port 8728/api)'
+  },
   MPESA_PUBLIC_KEY: {
     requiredIf: () => process.env.NODE_ENV === 'production',
     description: 'M-Pesa public key for signature verification (production only)'
@@ -147,6 +152,9 @@ function validateSecrets() {
 
       if (!value) {
         errors.push(`❌ Missing conditional secret: ${secretName}`);
+      } else if (rules.pattern && !rules.pattern.test(value)) {
+        // e.g. MIKROTIK_USE_TLS must be exactly "true" or "false"
+        errors.push(`❌ ${secretName} format is invalid (expected: ${rules.pattern})`);
       }
     }
   }
@@ -279,7 +287,10 @@ function getSecrets() {
     mikrotikHost: process.env.MIKROTIK_HOST,
     mikrotikUser: process.env.MIKROTIK_USER,
     mikrotikPassword: process.env.MIKROTIK_PASSWORD,
-    mikrotikPort: Number(process.env.MIKROTIK_PORT || 8728)
+    mikrotikPort: Number(process.env.MIKROTIK_PORT || 8728),
+    mikrotikUseTls: process.env.MIKROTIK_USE_TLS !== undefined
+      ? process.env.MIKROTIK_USE_TLS === 'true'
+      : process.env.NODE_ENV === 'production'
   };
 }
 

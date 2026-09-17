@@ -233,15 +233,33 @@ router.post("/users/:id/block", authMiddleware, csrfProtection, async (req, res)
     const adminId = req.admin?.id;
 
     // Update user status to BLOCKED
-    await prisma.user.update({
+    const user = await prisma.user.update({
       where: { id: parseInt(id) },
-      data: { status: 'BLOCKED', blockedReason: 'Admin imposed block' }
+      data: { status: 'BLOCKED', blockedReason: 'Admin imposed block' },
+      select: { id: true, macAddress: true },
     });
+
+    // Immediately remove the device from the router so an already-connected user
+    // is kicked at once — don't wait for the sync worker or session-expiry job.
+    if (user.macAddress) {
+      disconnectByMac(user.macAddress)
+        .then((result) => {
+          if (result.success) {
+            console.log(`✅ Blocked user ${id} disconnected from router (${user.macAddress})`);
+          } else {
+            console.warn(`⚠️  Could not disconnect blocked user ${id} from router: ${result.message}`);
+          }
+        })
+        .catch((err) =>
+          console.error(`❌ disconnectByMac failed for blocked user ${id}:`, err.message)
+        );
+    }
 
     // Log admin action
     logAudit('ADMIN_BLOCK_USER', {
       adminId,
       userId: id,
+      macAddress: user.macAddress || null,
       timestamp: new Date().toISOString()
     });
 
