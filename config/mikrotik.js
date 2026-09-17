@@ -1,5 +1,5 @@
 /**
- * MikroTik Integration Service (v3 — consolidated)
+ * MikroTik Integration Service (v4 — production-hardened)
  *
  * Architecture: Uses /ip/hotspot/user (not ip-binding/bypassed) so that:
  *  - MikroTik profile idle-timeout natively kicks idle devices
@@ -9,6 +9,14 @@
  * MikroTik prerequisite:
  *  - Hotspot must be configured to allow MAC-address login (no password popup)
  *  - ensureHotspotProfiles() is called on app startup to create the required profile
+ *
+ * Production changes (v4):
+ *  - Persistent singleton connection with auto-reconnect (P-1)
+ *  - All print queries use server-side MAC filters (P-2, P-3)
+ *  - getActiveMACSet + getActiveDevices merged into getActiveSessions() (P-2)
+ *  - All client.write() calls wrapped with a 4-second app-level timeout (P-4)
+ *  - Socket-level timeout reduced to 5 s (P-4)
+ *  - closeMikrotikConnection() exported for graceful shutdown (P-5)
  */
 
 require("dotenv").config();
@@ -53,20 +61,48 @@ function fmtSeconds(sec) {
   return `${h}:${m}:${s}`;
 }
 
-/** Create a RouterOS client, or null if MikroTik is disabled / misconfigured. */
-function getClient() {
-  if (!MIKROTIK_ENABLED) return null;
+/**
+ * Race a RouterOS write() promise against a hard wall-clock deadline.
+ * Prevents the payment hot path from blocking for the full 5-second socket
+ * timeout before reaching the COMPLETED_BUT_MAC_FAILED fallback.
+ *
+ * @param {Promise} promise  - The client.write() promise to race.
+ * @param {number}  ms       - App-level deadline in milliseconds (default 4 s).
+ * @param {string}  label    - Human label for the timeout error message.
+ */
+function withTimeout(promise, ms = 4000, label = "MikroTik") {
+  let timer;
+  const deadline = new Promise((_, reject) => {
+    timer = setTimeout(
+      () => reject(new Error(`${label} call timed out after ${ms}ms`)),
+      ms
+    );
+  });
+  return Promise.race([promise, deadline]).finally(() => clearTimeout(timer));
+}
 
+// ---------------------------------------------------------------------------
+// Persistent singleton connection (P-1)
+// ---------------------------------------------------------------------------
+
+/** Cached singleton client; null until first getMikrotikClient() call. */
+let _client = null;
+/** Prevent concurrent reconnection races. */
+let _connectingPromise = null;
+
+/**
+ * Build the RouterOSAPI options from env vars.
+ * Separated so it can be called on reconnect without repeating the logic.
+ */
+function buildClientOptions() {
   const host = process.env.MIKROTIK_HOST;
   const user = process.env.MIKROTIK_USER;
   const password = process.env.MIKROTIK_PASSWORD;
 
   if (!host || !user || !password) {
-    console.error("❌ MikroTik: missing MIKROTIK_HOST / MIKROTIK_USER / MIKROTIK_PASSWORD");
     return null;
   }
 
-  // H-5 FIX: Determine TLS configuration and automatically select matching RouterOS API port
   const tlsEnv = process.env.MIKROTIK_USE_TLS;
   const useTls = tlsEnv !== undefined
     ? String(tlsEnv).toLowerCase() === "true"
@@ -80,7 +116,6 @@ function getClient() {
     );
   }
 
-  // Switch default port automatically: 8729 for TLS (api-ssl), 8728 for plaintext (api)
   let port;
   if (process.env.MIKROTIK_PORT) {
     port = Number(process.env.MIKROTIK_PORT);
@@ -88,18 +123,75 @@ function getClient() {
     port = useTls ? 8729 : 8728;
   }
 
-  try {
-    return new RouterOSAPI({
-      host,
-      user,
-      password,
-      port,
-      timeout: 10000,
-      tls: useTls,
-    });
-  } catch (err) {
-    console.error("❌ Failed to create RouterOS client:", err.message);
+  return { host, user, password, port, tls: useTls, timeout: 5000 };
+}
+
+/**
+ * Return the live, connected RouterOS client (singleton).
+ * On first call (or after a fatal disconnect) it connects and caches the
+ * instance. If MikroTik is disabled or credentials are missing, returns null.
+ *
+ * @returns {Promise<RouterOSAPI|null>}
+ */
+async function getMikrotikClient() {
+  if (!MIKROTIK_ENABLED) return null;
+
+  // Already have a connected client — return it immediately
+  if (_client) return _client;
+
+  // Another call is already connecting — wait for that promise
+  if (_connectingPromise) return _connectingPromise;
+
+  const opts = buildClientOptions();
+  if (!opts) {
+    console.error("❌ MikroTik: missing MIKROTIK_HOST / MIKROTIK_USER / MIKROTIK_PASSWORD");
     return null;
+  }
+
+  _connectingPromise = (async () => {
+    try {
+      const client = new RouterOSAPI(opts);
+
+      // When the connection dies, clear the singleton so the next call reconnects
+      client.on("error", (err) => {
+        console.error("❌ MikroTik connection error:", err.message);
+        _client = null;
+      });
+      client.on("close", () => {
+        console.warn("⚠️  MikroTik connection closed — will reconnect on next call.");
+        _client = null;
+      });
+
+      await client.connect();
+      console.log("✅ MikroTik persistent connection established.");
+      _client = client;
+      return _client;
+    } catch (err) {
+      console.error("❌ MikroTik connect failed:", err.message);
+      _client = null;
+      return null;
+    } finally {
+      _connectingPromise = null;
+    }
+  })();
+
+  return _connectingPromise;
+}
+
+/**
+ * Explicitly close the persistent MikroTik connection.
+ * Call this from closeWorkers() during SIGTERM / SIGINT.
+ */
+async function closeMikrotikConnection() {
+  if (_client) {
+    try {
+      await _client.close();
+      console.log("✅ MikroTik connection closed gracefully.");
+    } catch (err) {
+      console.error("⚠️  Error closing MikroTik connection:", err.message);
+    } finally {
+      _client = null;
+    }
   }
 }
 
@@ -113,16 +205,18 @@ function getClient() {
  * Sets idle-timeout on the profile so MikroTik natively disconnects idle users.
  */
 async function ensureHotspotProfiles() {
-  const client = getClient();
+  const client = await getMikrotikClient();
   if (!client) {
     console.log("ℹ️  MikroTik disabled — skipping profile setup.");
     return { success: true, mode: "dev" };
   }
 
   try {
-    await client.connect();
-
-    const profiles = await client.write(["/ip/hotspot/user-profile/print"]);
+    const profiles = await withTimeout(
+      client.write(["/ip/hotspot/user-profile/print"]),
+      4000,
+      "ensureHotspotProfiles/print"
+    );
     const existing = (profiles || []).find((p) => p.name === HOTSPOT_PROFILE);
     const idleFmt = fmtSeconds(IDLE_TIMEOUT_SEC);
 
@@ -134,24 +228,30 @@ async function ensureHotspotProfiles() {
     };
 
     if (existing) {
-      await client.write(["/ip/hotspot/user-profile/set"], {
-        ".id": existing[".id"],
-        "idle-timeout": idleFmt,
-        "session-timeout": "0",
-        "keepalive-timeout": "00:02:00",
-      });
+      await withTimeout(
+        client.write(["/ip/hotspot/user-profile/set"], {
+          ".id": existing[".id"],
+          "idle-timeout": idleFmt,
+          "session-timeout": "0",
+          "keepalive-timeout": "00:02:00",
+        }),
+        4000,
+        "ensureHotspotProfiles/set"
+      );
       console.log(`✅ MikroTik profile '${HOTSPOT_PROFILE}' updated (idle-timeout=${idleFmt})`);
     } else {
-      await client.write(["/ip/hotspot/user-profile/add"], profileParams);
+      await withTimeout(
+        client.write(["/ip/hotspot/user-profile/add"], profileParams),
+        4000,
+        "ensureHotspotProfiles/add"
+      );
       console.log(`✅ MikroTik profile '${HOTSPOT_PROFILE}' created (idle-timeout=${idleFmt})`);
     }
 
-    await client.close();
     return { success: true };
   } catch (err) {
     console.error("❌ MikroTik profile setup failed:", err.message);
     logAudit("mikrotik_profile_setup_error", { error: err.message });
-    try { await client.close(); } catch (_) {}
     return { success: false, error: err.message };
   }
 }
@@ -175,7 +275,7 @@ async function whitelistMAC(macAddress, timeLabel, pkg = null) {
   }
 
   const mac = validation.normalized;
-  const client = getClient();
+  const client = await getMikrotikClient();
 
   if (!client) {
     console.log(`📝 [DEV] Would whitelist ${mac} for ${timeLabel}`);
@@ -184,24 +284,42 @@ async function whitelistMAC(macAddress, timeLabel, pkg = null) {
   }
 
   try {
-    await client.connect();
-
-    // Remove any pre-existing hotspot user for this MAC (idempotent re-grant)
-    const users = await client.write(["/ip/hotspot/user/print"]);
-    const old = (users || []).find(
-      (u) => (u["mac-address"] || "").toUpperCase() === mac || u.name === mac
+    // Remove any pre-existing hotspot user for this MAC — server-side filter (P-3)
+    const users = await withTimeout(
+      client.write([
+        "/ip/hotspot/user/print",
+        `?mac-address=${mac}`,
+        "=.proplist=.id,mac-address,name",
+      ]),
+      4000,
+      "whitelistMAC/user/print"
     );
+    const old = (users || [])[0];
     if (old?.[".id"]) {
-      await client.write(["/ip/hotspot/user/remove"], { ".id": old[".id"] });
+      await withTimeout(
+        client.write(["/ip/hotspot/user/remove"], { ".id": old[".id"] }),
+        4000,
+        "whitelistMAC/user/remove"
+      );
     }
 
-    // Remove any lingering legacy ip-binding entries
-    const bindings = await client.write(["/ip/hotspot/ip-binding/print"]);
-    const legacyBinding = (bindings || []).find(
-      (b) => (b["mac-address"] || "").toUpperCase() === mac
+    // Remove any lingering legacy ip-binding entries — server-side filter (P-3)
+    const bindings = await withTimeout(
+      client.write([
+        "/ip/hotspot/ip-binding/print",
+        `?mac-address=${mac}`,
+        "=.proplist=.id,mac-address",
+      ]),
+      4000,
+      "whitelistMAC/ip-binding/print"
     );
+    const legacyBinding = (bindings || [])[0];
     if (legacyBinding?.[".id"]) {
-      await client.write(["/ip/hotspot/ip-binding/remove"], { ".id": legacyBinding[".id"] });
+      await withTimeout(
+        client.write(["/ip/hotspot/ip-binding/remove"], { ".id": legacyBinding[".id"] }),
+        4000,
+        "whitelistMAC/ip-binding/remove"
+      );
     }
 
     // Build the new hotspot user entry
@@ -218,8 +336,11 @@ async function whitelistMAC(macAddress, timeLabel, pkg = null) {
       userEntry["limit-bytes-total"] = String(pkg.dataCapBytes);
     }
 
-    await client.write(["/ip/hotspot/user/add"], userEntry);
-    await client.close();
+    await withTimeout(
+      client.write(["/ip/hotspot/user/add"], userEntry),
+      4000,
+      "whitelistMAC/user/add"
+    );
 
     logAudit("mac_whitelist_success", {
       macAddress: mac,
@@ -231,7 +352,10 @@ async function whitelistMAC(macAddress, timeLabel, pkg = null) {
   } catch (err) {
     console.error("❌ MikroTik whitelist error:", err.message);
     logAudit("mac_whitelist_error", { macAddress: mac, timeLabel, error: err.message });
-    try { await client.close(); } catch (_) {}
+    // Invalidate the singleton so the next call reconnects
+    if (err.message.includes("timed out") || err.message.includes("closed")) {
+      _client = null;
+    }
     return { success: false, message: err.message };
   }
 }
@@ -248,7 +372,7 @@ async function disconnectByMac(macAddress) {
   }
 
   const mac = validation.normalized;
-  const client = getClient();
+  const client = await getMikrotikClient();
 
   if (!client) {
     console.log(`📝 [DEV] Would disconnect ${mac}`);
@@ -256,153 +380,208 @@ async function disconnectByMac(macAddress) {
   }
 
   try {
-    await client.connect();
-
-    // 1. Kick the active hotspot session
-    const active = await client.write(["/ip/hotspot/active/print"]);
-    const activeEntry = (active || []).find(
-      (a) => (a["mac-address"] || "").toUpperCase() === mac
+    // 1. Kick the active hotspot session — server-side filter (P-3)
+    const active = await withTimeout(
+      client.write([
+        "/ip/hotspot/active/print",
+        `?mac-address=${mac}`,
+        "=.proplist=.id,mac-address",
+      ]),
+      4000,
+      "disconnectByMac/active/print"
     );
+    const activeEntry = (active || [])[0];
     if (activeEntry?.[".id"]) {
-      await client.write(["/ip/hotspot/active/remove"], { ".id": activeEntry[".id"] });
+      await withTimeout(
+        client.write(["/ip/hotspot/active/remove"], { ".id": activeEntry[".id"] }),
+        4000,
+        "disconnectByMac/active/remove"
+      );
       console.log(`  ✅ Active session removed: ${mac}`);
     }
 
-    // 2. Remove hotspot user entry (blocks re-auth)
-    const users = await client.write(["/ip/hotspot/user/print"]);
-    const userEntry = (users || []).find(
-      (u) => (u["mac-address"] || "").toUpperCase() === mac || u.name === mac
+    // 2. Remove hotspot user entry — server-side filter (P-3)
+    const users = await withTimeout(
+      client.write([
+        "/ip/hotspot/user/print",
+        `?mac-address=${mac}`,
+        "=.proplist=.id,mac-address,name",
+      ]),
+      4000,
+      "disconnectByMac/user/print"
     );
+    const userEntry = (users || [])[0];
     if (userEntry?.[".id"]) {
-      await client.write(["/ip/hotspot/user/remove"], { ".id": userEntry[".id"] });
+      await withTimeout(
+        client.write(["/ip/hotspot/user/remove"], { ".id": userEntry[".id"] }),
+        4000,
+        "disconnectByMac/user/remove"
+      );
       console.log(`  ✅ Hotspot user removed: ${mac}`);
     }
 
-    // 3. Remove any legacy ip-binding bypass entry
-    const bindings = await client.write(["/ip/hotspot/ip-binding/print"]);
-    const binding = (bindings || []).find(
-      (b) => (b["mac-address"] || "").toUpperCase() === mac
+    // 3. Remove any legacy ip-binding bypass entry — server-side filter (P-3)
+    const bindings = await withTimeout(
+      client.write([
+        "/ip/hotspot/ip-binding/print",
+        `?mac-address=${mac}`,
+        "=.proplist=.id,mac-address",
+      ]),
+      4000,
+      "disconnectByMac/ip-binding/print"
     );
+    const binding = (bindings || [])[0];
     if (binding?.[".id"]) {
-      await client.write(["/ip/hotspot/ip-binding/remove"], { ".id": binding[".id"] });
+      await withTimeout(
+        client.write(["/ip/hotspot/ip-binding/remove"], { ".id": binding[".id"] }),
+        4000,
+        "disconnectByMac/ip-binding/remove"
+      );
       console.log(`  ✅ IP binding removed: ${mac}`);
     }
 
-    await client.close();
     logAudit("mac_disconnected", { macAddress: mac });
     return { success: true, message: `Disconnected ${mac}` };
   } catch (err) {
     console.error("❌ MikroTik disconnect error:", err.message);
     logAudit("mac_disconnect_error", { macAddress: mac, error: err.message });
-    try { await client.close(); } catch (_) {}
+    if (err.message.includes("timed out") || err.message.includes("closed")) {
+      _client = null;
+    }
     return { success: false, message: err.message };
   }
 }
 
 /** Disconnect every active hotspot user (admin emergency action). */
 async function disconnectAllUsers() {
-  const client = getClient();
+  const client = await getMikrotikClient();
   if (!client) return { success: true, message: "Dev mode: disconnected all users" };
 
   try {
-    await client.connect();
-
-    const active = await client.write(["/ip/hotspot/active/print"]);
+    const active = await withTimeout(
+      client.write(["/ip/hotspot/active/print"]),
+      4000,
+      "disconnectAllUsers/active/print"
+    );
     let count = 0;
     for (const a of active || []) {
       if (a[".id"]) {
-        await client.write(["/ip/hotspot/active/remove"], { ".id": a[".id"] });
+        await withTimeout(
+          client.write(["/ip/hotspot/active/remove"], { ".id": a[".id"] }),
+          4000,
+          "disconnectAllUsers/active/remove"
+        );
         count++;
       }
     }
 
     // Remove all hotspot users created by this app
-    const users = await client.write(["/ip/hotspot/user/print"]);
+    const users = await withTimeout(
+      client.write(["/ip/hotspot/user/print"]),
+      4000,
+      "disconnectAllUsers/user/print"
+    );
     for (const u of users || []) {
       if (u.comment?.startsWith("Qonnect_") && u[".id"]) {
-        await client.write(["/ip/hotspot/user/remove"], { ".id": u[".id"] });
+        await withTimeout(
+          client.write(["/ip/hotspot/user/remove"], { ".id": u[".id"] }),
+          4000,
+          "disconnectAllUsers/user/remove"
+        );
       }
     }
 
-    await client.close();
     logAudit("disconnect_all_users", { disconnectCount: count });
     console.log(`✅ Disconnected ${count} active sessions`);
     return { success: true, message: `Disconnected ${count} users` };
   } catch (err) {
     console.error("❌ disconnectAllUsers error:", err.message);
-    try { await client.close(); } catch (_) {}
+    if (err.message.includes("timed out") || err.message.includes("closed")) {
+      _client = null;
+    }
     return { success: false, message: err.message };
   }
 }
 
-/** Return active devices with traffic stats (bytes-in / bytes-out). */
-async function getActiveDevices() {
-  const client = getClient();
-  if (!client) return { success: true, data: [] };
+/**
+ * Return both the set of active MACs and the full device stats in a single
+ * RouterOS round-trip. Replaces the separate getActiveMACSet() and
+ * getActiveDevices() calls that previously each opened their own connection.
+ *
+ * @returns {Promise<{success: boolean, macs: Set<string>, devices: Array, error?: string}>}
+ */
+async function getActiveSessions() {
+  const client = await getMikrotikClient();
+  if (!client) {
+    return { success: true, macs: new Set(), devices: [] };
+  }
 
   try {
-    await client.connect();
-    const active = await client.write(["/ip/hotspot/active/print"]);
-    await client.close();
+    const active = await withTimeout(
+      client.write(["/ip/hotspot/active/print"]),
+      4000,
+      "getActiveSessions/print"
+    );
 
-    return {
-      success: true,
-      data: (active || []).map((a) => ({
-        macAddress: a["mac-address"],
-        ipAddress: a.address,
-        user: a.user,
-        uptime: a.uptime,
-        bytesIn: Number(a["bytes-in"] || 0),
-        bytesOut: Number(a["bytes-out"] || 0),
-      })),
-    };
+    const rows = active || [];
+    const macs = new Set(
+      rows
+        .map((a) => (a["mac-address"] || "").toUpperCase())
+        .filter(Boolean)
+    );
+    const devices = rows.map((a) => ({
+      macAddress: a["mac-address"],
+      ipAddress: a.address,
+      user: a.user,
+      uptime: a.uptime,
+      bytesIn: Number(a["bytes-in"] || 0),
+      bytesOut: Number(a["bytes-out"] || 0),
+    }));
+
+    return { success: true, macs, devices };
   } catch (err) {
-    console.error("❌ getActiveDevices error:", err.message);
-    try { await client.close(); } catch (_) {}
-    return { success: false, error: err.message };
+    console.error("❌ getActiveSessions error:", err.message);
+    if (err.message.includes("timed out") || err.message.includes("closed")) {
+      _client = null;
+    }
+    return { success: false, macs: new Set(), devices: [], error: err.message };
   }
 }
 
 /**
  * Return a Set of currently active MAC addresses (uppercase).
- * Used by the session-sync worker to detect idle/MikroTik-initiated disconnects.
+ * Thin wrapper around getActiveSessions() for backward-compatibility.
+ * Prefer calling getActiveSessions() directly when you also need device stats.
  */
 async function getActiveMACSet() {
-  const client = getClient();
-  if (!client) return { success: true, macs: new Set() };
+  const result = await getActiveSessions();
+  return { success: result.success, macs: result.macs, error: result.error };
+}
 
-  try {
-    await client.connect();
-    const active = await client.write(["/ip/hotspot/active/print"]);
-    await client.close();
-
-    const macs = new Set(
-      (active || [])
-        .map((a) => (a["mac-address"] || "").toUpperCase())
-        .filter(Boolean)
-    );
-    return { success: true, macs };
-  } catch (err) {
-    console.error("❌ getActiveMACSet error:", err.message);
-    try { await client.close(); } catch (_) {}
-    return { success: false, macs: new Set(), error: err.message };
-  }
+/** Return active devices with traffic stats (bytes-in / bytes-out).
+ *  Thin wrapper around getActiveSessions() for backward-compatibility.
+ */
+async function getActiveDevices() {
+  const result = await getActiveSessions();
+  return {
+    success: result.success,
+    data: result.devices,
+    error: result.error,
+  };
 }
 
 /** Test connectivity and return router identity + connected user count. */
 async function getStatus() {
-  const client = getClient();
+  const client = await getMikrotikClient();
   if (!client) {
     return { success: true, data: { status: "ok", connectedUsers: 0, mode: "dev" } };
   }
 
   try {
-    await client.connect();
     const [active, identity] = await Promise.all([
-      client.write(["/ip/hotspot/active/print"]),
-      client.write(["/system/identity/print"]),
+      withTimeout(client.write(["/ip/hotspot/active/print"]), 4000, "getStatus/active"),
+      withTimeout(client.write(["/system/identity/print"]), 4000, "getStatus/identity"),
     ]);
-    await client.close();
 
     return {
       success: true,
@@ -415,7 +594,9 @@ async function getStatus() {
     };
   } catch (err) {
     console.error("❌ MikroTik getStatus error:", err.message);
-    try { await client.close(); } catch (_) {}
+    if (err.message.includes("timed out") || err.message.includes("closed")) {
+      _client = null;
+    }
     return { success: false, error: err.message, data: { status: "error" } };
   }
 }
@@ -427,7 +608,9 @@ module.exports = {
   whitelistMAC,
   disconnectByMac,
   disconnectAllUsers,
+  getActiveSessions,
   getActiveDevices,
   getActiveMACSet,
   getStatus,
+  closeMikrotikConnection,
 };

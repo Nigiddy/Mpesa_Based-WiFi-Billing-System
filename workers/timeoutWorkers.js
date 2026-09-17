@@ -1,7 +1,7 @@
 const { Worker, Queue } = require('bullmq');
 const prisma = require('../config/prismaClient');
 const { PaymentStatus } = require('@prisma/client');
-const { disconnectByMac, whitelistMAC, getActiveMACSet, getActiveDevices } = require('../config/mikrotik');
+const { disconnectByMac, whitelistMAC, getActiveSessions, closeMikrotikConnection } = require('../config/mikrotik');
 const { logAudit } = require('../utils/auditLogger');
 // BOOT-5 FIX: Use the shared Redis singleton instead of creating a private connection
 const { getRedisClient } = require('../config/redis');
@@ -235,8 +235,8 @@ const sessionSyncWorker = sessionSyncQueue ? new Worker(
 
     if (activeSessions.length === 0) return;
 
-    // 2. Get the set of MACs currently active on MikroTik
-    const { success, macs: activeMACsOnRouter } = await getActiveMACSet();
+    // 2. Fetch active MACs and device stats in a single RouterOS round-trip (P-2)
+    const { success, macs: activeMACsOnRouter, devices: activeDevices } = await getActiveSessions();
 
     // If MikroTik is unreachable, skip sync (don't wrongly close all sessions)
     if (!success) {
@@ -266,10 +266,9 @@ const sessionSyncWorker = sessionSyncQueue ? new Worker(
 
     // 4. Application-level data cap check for extra safety
     //    (catches cases where MikroTik didn't enforce it)
-    const { getPackageByPlanKey } = require('../lib/packages');
-    const devicesResult = await getActiveDevices();
-    if (devicesResult.success) {
-      for (const device of devicesResult.data) {
+    //    Re-uses the activeDevices already fetched above — no extra round-trip.
+    if (activeDevices.length > 0) {
+      for (const device of activeDevices) {
         const mac = (device.macAddress || '').toUpperCase();
         const session = activeSessions.find((s) => s.macAddress.toUpperCase() === mac);
         if (!session) continue;
@@ -339,6 +338,9 @@ async function closeWorkers() {
       .map((w) => w.close().catch((e) => console.error('[Workers] Error closing worker:', e.message)))
   );
   console.log('[Workers] All BullMQ workers closed');
+
+  // Close the persistent MikroTik singleton connection (P-5)
+  await closeMikrotikConnection();
 }
 
 module.exports = {
