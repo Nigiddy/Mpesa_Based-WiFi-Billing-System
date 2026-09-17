@@ -295,6 +295,7 @@ function displaySecretsConfig() {
     jwtSecret: config.jwtSecret ? '***' + config.jwtSecret.slice(-4) : 'NOT SET',
     mpesaConsumerSecret: config.mpesaConsumerSecret ? '***' : 'NOT SET',
     mpesaPasskey: config.mpesaPasskey ? '***' : 'NOT SET',
+    mikrotikPassword: config.mikrotikPassword ? '***' : 'NOT SET',
     databaseUrl: config.databaseUrl
       ? config.databaseUrl.replace(/:[^:@]*@/, ':***@')
       : 'NOT SET'
