@@ -274,20 +274,38 @@ const sessionSyncWorker = sessionSyncQueue ? new Worker(
     //    (catches cases where MikroTik didn't enforce it)
     //    Re-uses the activeDevices already fetched above — no extra round-trip.
     if (activeDevices.length > 0) {
+      // N+1 FIX: collect all MACs in a single pass, then fire ONE findMany instead
+      // of one findFirst per device inside the loop.
+      const deviceMacs = activeDevices
+        .map((d) => (d.macAddress || '').toUpperCase())
+        .filter(Boolean);
+
+      const { getPackageByAmount } = require('../lib/packages');
+
+      // Fetch the most-recent COMPLETED payment for every active MAC in one query.
+      // We group in memory because Prisma/MySQL doesn't support DISTINCT ON.
+      const rawPayments = await prisma.payment.findMany({
+        where: { macAddress: { in: deviceMacs }, status: 'COMPLETED' },
+        orderBy: { completedAt: 'desc' },
+        select: { macAddress: true, amount: true },
+      });
+
+      // Keep only the latest payment per MAC (results are already ordered desc).
+      const paymentByMac = new Map();
+      for (const p of rawPayments) {
+        if (!paymentByMac.has(p.macAddress)) {
+          paymentByMac.set(p.macAddress, p);
+        }
+      }
+
       for (const device of activeDevices) {
         const mac = (device.macAddress || '').toUpperCase();
         const session = activeSessions.find((s) => s.macAddress.toUpperCase() === mac);
         if (!session) continue;
 
-        // Retrieve the linked payment to find the plan
-        const payment = await prisma.payment.findFirst({
-          where: { macAddress: mac, status: 'COMPLETED' },
-          orderBy: { completedAt: 'desc' },
-          select: { amount: true },
-        });
+        const payment = paymentByMac.get(mac);
         if (!payment) continue;
 
-        const { getPackageByAmount } = require('../lib/packages');
         const pkg = getPackageByAmount(payment.amount);
         if (!pkg || !pkg.dataCapBytes || pkg.dataCapBytes === 0) continue;
 
