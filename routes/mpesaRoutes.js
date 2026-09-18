@@ -141,7 +141,10 @@ router.post(
             macAddress: mac,
             status: PaymentStatus.PENDING,
             ipAddress: req.ip,
-            mpesaRef: mpesaResponse.CheckoutRequestID // Save the reference immediately
+            mpesaRef: mpesaResponse.CheckoutRequestID, // Save the reference immediately
+            // L-7: Store the selected plan key so the callback never needs to
+            // re-derive the package from the amount (breaks if prices change).
+            planKey: pkg,
           }
         });
         console.log(`📝 Payment record created: ${transactionId}`);

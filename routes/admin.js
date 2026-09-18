@@ -689,8 +689,8 @@ router.get("/transactions/:transactionId/receipt/download", authMiddleware, asyn
   }
 });
 
-// Public support contact endpoint. It is rate-limited and strictly validated
-// because visitors need to submit requests before they have an admin session.
+// Public support contact endpoint. Rate-limited and strictly validated
+// because visitors submit requests before they have an admin session.
 router.post("/support/contact", apiLimiter, async (req, res) => {
   const { name, email, phone, subject, message } = req.body || {};
   if (
@@ -703,6 +703,22 @@ router.post("/support/contact", apiLimiter, async (req, res) => {
     return res.status(400).json({ success: false, error: "Please provide valid support details." });
   }
 
+  try {
+    // L-6: Persist to DB so admin GET /support/requests returns real data.
+    await prisma.supportRequest.create({
+      data: {
+        name: name.trim(),
+        email: email.trim().toLowerCase(),
+        phone: phone.trim(),
+        subject: subject.trim(),
+        message: message.trim(),
+      },
+    });
+  } catch (dbErr) {
+    // Log but do not surface DB errors to the public caller.
+    console.error("❌ Failed to persist support request:", dbErr.message);
+  }
+
   logAudit("support_request_received", {
     name: name.trim(),
     email: email.trim().toLowerCase(),
@@ -712,8 +728,29 @@ router.post("/support/contact", apiLimiter, async (req, res) => {
   return res.status(202).json({ success: true, message: "Support request received." });
 });
 
+// L-6: Return real DB rows instead of the previously hardcoded empty array.
 router.get("/support/requests", authMiddleware, async (req, res) => {
-  return res.json({ success: true, data: { requests: [], total: 0, page: 1, totalPages: 1 } });
+  try {
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 20));
+    const skip = (page - 1) * limit;
+
+    const [requests, total] = await Promise.all([
+      prisma.supportRequest.findMany({
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+        select: { id: true, name: true, email: true, phone: true, subject: true, message: true, createdAt: true },
+      }),
+      prisma.supportRequest.count(),
+    ]);
+
+    const totalPages = Math.max(1, Math.ceil(total / limit));
+    return res.json({ success: true, data: { requests, total, page, totalPages } });
+  } catch (error) {
+    console.error("Get support requests error:", error);
+    return res.status(500).json({ success: false, error: "Failed to fetch support requests" });
+  }
 });
 
 // Logs endpoints
@@ -759,17 +796,14 @@ router.get("/network/status", authMiddleware, async (req, res) => {
 // GET system settings
 router.get("/system/settings", authMiddleware, async (req, res) => {
   try {
-    let settings = await prisma.systemSettings.findUnique({
-      where: { id: 1 }
+    // L-2: SystemSettings is a singleton (id=1 only). Use upsert so that:
+    // 1. The row is auto-created on first boot with schema defaults.
+    // 2. No second row can be created by accident (create() is never called).
+    const settings = await prisma.systemSettings.upsert({
+      where: { id: 1 },
+      update: {},          // no-op if the row exists
+      create: { id: 1, updatedAt: new Date() },
     });
-
-    // Create default settings if they don't exist
-    if (!settings) {
-      settings = await prisma.systemSettings.create({
-        data: { id: 1 }
-      });
-    }
-
     res.json({ success: true, data: settings });
   } catch (error) {
     console.error("Get settings error:", error);
