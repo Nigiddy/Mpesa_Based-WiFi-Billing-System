@@ -53,6 +53,7 @@ model payment {
   session              session[]
 
   @@index([createdAt], map: "Payment_createdAt_idx")
+  @@index([macAddress], map: "Payment_macAddress_idx")
   @@index([mpesa_reference], map: "Payment_mpesa_reference_idx")
   @@index([phone, status, createdAt], map: "Payment_phone_status_createdAt_idx")
   @@index([status, createdAt], map: "Payment_status_createdAt_idx")
@@ -92,6 +93,9 @@ model session {
   user                user?              @relation(fields: [userId], references: [id], map: "Session_userId_fkey")
   voucherredemption   voucherredemption? @relation(fields: [voucherRedemptionId], references: [id], map: "Session_voucherRedemptionId_fkey")
 
+  // Composite index for the most-frequent active-session query:
+  // WHERE disconnectedAt IS NULL AND expiryTime > NOW()
+  @@index([disconnectedAt, expiryTime], map: "Session_active_idx")
   @@index([disconnectedAt], map: "Session_disconnectedAt_idx")
   @@index([expiryTime], map: "Session_expiryTime_idx")
   @@index([macAddress], map: "Session_macAddress_idx")

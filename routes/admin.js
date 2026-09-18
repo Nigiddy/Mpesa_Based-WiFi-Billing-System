@@ -46,11 +46,21 @@ router.get("/admin/csrf-token", authMiddleware, (req, res) => {
   });
 });
 
-// âœ… Get All Payments for Admin Dashboard (Protected)
+// ✅ Get Payments for Admin Dashboard (Protected) — cursor-based pagination
+// Query params:
+//   cursor  – ID of the last payment from the previous page (omit for first page)
+//   limit   – page size, 1–100 (default 50)
 router.get("/admin/payments", authMiddleware, async (req, res) => {
   try {
+    const rawLimit = parseInt(req.query.limit, 10);
+    const limit = (!isNaN(rawLimit) && rawLimit > 0 && rawLimit <= 100) ? rawLimit : 50;
+    const cursor = req.query.cursor ? parseInt(req.query.cursor, 10) : undefined;
+
     const payments = await prisma.payment.findMany({
+      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+      take: limit,
       select: {
+        id: true,
         phone: true,
         amount: true,
         requestedAt: true,
@@ -58,14 +68,16 @@ router.get("/admin/payments", authMiddleware, async (req, res) => {
       },
       orderBy: { requestedAt: 'desc' }
     });
-    res.json({ success: true, data: payments });
+
+    const nextCursor = payments.length === limit ? payments[payments.length - 1].id : null;
+    res.json({ success: true, data: payments, nextCursor });
   } catch (err) {
     console.error("Database error:", err);
     res.status(500).json({ success: false, error: "Database error" });
   }
 });
 
-// âœ… Get Admin Summary (Protected) â€” FIXED: Now calculates successRate and blockedUsers
+// ✅ Get Admin Summary (Protected) — FIXED: Now calculates successRate and blockedUsers
 router.get("/admin/summary", authMiddleware, async (req, res) => {
   try {
     const [
@@ -128,62 +140,74 @@ router.get("/admin/summary", authMiddleware, async (req, res) => {
   }
 });
 
-// Users export endpoint
+// Users export endpoint — streams batched chunks of 1000 rows to avoid
+// loading the entire table into memory.
 router.get("/users/export/csv", authMiddleware, async (req, res) => {
+  const CHUNK = 1000;
+  const filename = `users_${new Date().toISOString().slice(0, 10)}.csv`;
+  res.setHeader('Content-Type', 'text/csv');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+
+  const header = [
+    'ID',
+    'Phone',
+    'MAC Address',
+    'Status',
+    'Total Spent (KES)',
+    'Sessions Count',
+    'Last Seen',
+    'Blocked Reason',
+    'Created At',
+    'Updated At',
+  ].join(',');
+  res.write(header + '\n');
+
+  let skip = 0;
+  let totalExported = 0;
   try {
-    // Fetch users with live aggregation: sum of completed payment amounts
-    // and count of sessions — replaces the removed totalSpent / sessionsCount fields.
-    const users = await prisma.user.findMany({
-      orderBy: { createdAt: 'desc' },
-      include: {
-        _count: { select: { sessions: true } },
-        payments: {
-          where: { status: 'COMPLETED' },
-          select: { amount: true },
+    while (true) {
+      const users = await prisma.user.findMany({
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: CHUNK,
+        include: {
+          _count: { select: { sessions: true } },
+          payments: {
+            where: { status: 'COMPLETED' },
+            select: { amount: true },
+          },
         },
-      },
-    });
+      });
+      if (users.length === 0) break;
 
-    const header = [
-      'ID',
-      'Phone',
-      'MAC Address',
-      'Status',
-      'Total Spent (KES)',
-      'Sessions Count',
-      'Last Seen',
-      'Blocked Reason',
-      'Created At',
-      'Updated At',
-    ].join(',');
+      const rows = users.map((user) => {
+        const totalSpent = user.payments.reduce((sum, p) => sum + p.amount, 0);
+        const sessionsCount = user._count.sessions;
+        return [
+          formatCsvValue(user.id),
+          formatCsvValue(user.phone),
+          formatCsvValue(user.macAddress),
+          formatCsvValue(user.status),
+          formatCsvValue(totalSpent),
+          formatCsvValue(sessionsCount),
+          formatCsvValue(user.lastSeen ? user.lastSeen.toISOString() : ''),
+          formatCsvValue(user.blockedReason || ''),
+          formatCsvValue(user.createdAt.toISOString()),
+          formatCsvValue(user.updatedAt.toISOString()),
+        ].join(',');
+      });
+      res.write(rows.join('\n') + '\n');
 
-    const rows = users.map((user) => {
-      const totalSpent = user.payments.reduce((sum, p) => sum + p.amount, 0);
-      const sessionsCount = user._count.sessions;
-      return [
-        formatCsvValue(user.id),
-        formatCsvValue(user.phone),
-        formatCsvValue(user.macAddress),
-        formatCsvValue(user.status),
-        formatCsvValue(totalSpent),
-        formatCsvValue(sessionsCount),
-        formatCsvValue(user.lastSeen ? user.lastSeen.toISOString() : ''),
-        formatCsvValue(user.blockedReason || ''),
-        formatCsvValue(user.createdAt.toISOString()),
-        formatCsvValue(user.updatedAt.toISOString()),
-      ].join(',');
-    });
-
-    const csv = [header, ...rows].join('\n');
-    const filename = `users_${new Date().toISOString().slice(0, 10)}.csv`;
-
-    res.setHeader('Content-Type', 'text/csv');
-    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-    logAudit('users_exported_csv', { count: users.length, admin: req.admin?.id });
-    return res.send(csv);
+      totalExported += users.length;
+      if (users.length < CHUNK) break;
+      skip += CHUNK;
+    }
+    logAudit('users_exported_csv', { count: totalExported, admin: req.admin?.id });
+    return res.end();
   } catch (error) {
     console.error('❌ /users/export/csv error:', error);
-    return res.status(500).json({ success: false, error: 'Failed to export users' });
+    // Headers already sent — end the stream; the partial download signals the error.
+    return res.end();
   }
 });
 
@@ -300,7 +324,7 @@ router.post("/users/:id/disconnect", authMiddleware, csrfProtection, async (req,
     const { id } = req.params;
     const adminId = req.admin?.id;
 
-    // BUG FIX (C-6): :id is a User ID â€” must query prisma.user, not prisma.payment.
+    // BUG FIX (C-6): :id is a User ID — must query prisma.user, not prisma.payment.
     const user = await prisma.user.findUnique({
       where: { id: parseInt(id) },
       select: { macAddress: true }
@@ -368,55 +392,72 @@ router.delete("/users/:id", authMiddleware, csrfProtection, async (req, res) => 
 });
 
 // Transactions endpoints
+// Transactions export endpoint — streams batched chunks of 1000 rows to avoid
+// loading the entire payments table into memory.
 router.get("/transactions/export/csv", authMiddleware, async (req, res) => {
+  const CHUNK = 1000;
+  const filename = `transactions_${new Date().toISOString().slice(0, 10)}.csv`;
+  res.setHeader('Content-Type', 'text/csv');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+
+  const header = [
+    'Transaction ID',
+    'Phone',
+    'Amount',
+    'Status',
+    'M-Pesa Reference',
+    'M-Pesa Receipt',
+    'MAC Address',
+    'IP Address',
+    'Requested At',
+    'Completed At',
+    'Refunded Amount',
+    'Refund Reason',
+    'Refunded At',
+    'Created At',
+    'Updated At',
+  ].join(',');
+  res.write(header + '\n');
+
+  let skip = 0;
+  let totalExported = 0;
   try {
-    const payments = await prisma.payment.findMany({ orderBy: { requestedAt: 'desc' } });
-    const header = [
-      'Transaction ID',
-      'Phone',
-      'Amount',
-      'Status',
-      'M-Pesa Reference',
-      'M-Pesa Receipt',
-      'MAC Address',
-      'IP Address',
-      'Requested At',
-      'Completed At',
-      'Refunded Amount',
-      'Refund Reason',
-      'Refunded At',
-      'Created At',
-      'Updated At',
-    ].join(',');
+    while (true) {
+      const payments = await prisma.payment.findMany({
+        orderBy: { requestedAt: 'desc' },
+        skip,
+        take: CHUNK,
+      });
+      if (payments.length === 0) break;
 
-    const rows = payments.map((payment) => [
-      formatCsvValue(payment.transactionId),
-      formatCsvValue(payment.phone),
-      formatCsvValue(payment.amount),
-      formatCsvValue(payment.status),
-      formatCsvValue(payment.mpesaRef || ''),
-      formatCsvValue(payment.mpesaReceipt || ''),
-      formatCsvValue(payment.macAddress),
-      formatCsvValue(payment.ipAddress || ''),
-      formatCsvValue(payment.requestedAt.toISOString()),
-      formatCsvValue(payment.completedAt ? payment.completedAt.toISOString() : ''),
-      formatCsvValue(payment.refundedAmount ?? ''),
-      formatCsvValue(payment.refundReason || ''),
-      formatCsvValue(payment.refundedAt ? payment.refundedAt.toISOString() : ''),
-      formatCsvValue(payment.createdAt.toISOString()),
-      formatCsvValue(payment.updatedAt.toISOString()),
-    ].join(','));
+      const rows = payments.map((payment) => [
+        formatCsvValue(payment.transactionId),
+        formatCsvValue(payment.phone),
+        formatCsvValue(payment.amount),
+        formatCsvValue(payment.status),
+        formatCsvValue(payment.mpesaRef || ''),
+        formatCsvValue(payment.mpesaReceipt || ''),
+        formatCsvValue(payment.macAddress),
+        formatCsvValue(payment.ipAddress || ''),
+        formatCsvValue(payment.requestedAt.toISOString()),
+        formatCsvValue(payment.completedAt ? payment.completedAt.toISOString() : ''),
+        formatCsvValue(payment.refundedAmount ?? ''),
+        formatCsvValue(payment.refundReason || ''),
+        formatCsvValue(payment.refundedAt ? payment.refundedAt.toISOString() : ''),
+        formatCsvValue(payment.createdAt.toISOString()),
+        formatCsvValue(payment.updatedAt.toISOString()),
+      ].join(','));
+      res.write(rows.join('\n') + '\n');
 
-    const csv = [header, ...rows].join('\n');
-    const filename = `transactions_${new Date().toISOString().slice(0, 10)}.csv`;
-
-    res.setHeader('Content-Type', 'text/csv');
-    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-    logAudit('transactions_exported_csv', { count: payments.length, admin: req.admin?.id });
-    return res.send(csv);
+      totalExported += payments.length;
+      if (payments.length < CHUNK) break;
+      skip += CHUNK;
+    }
+    logAudit('transactions_exported_csv', { count: totalExported, admin: req.admin?.id });
+    return res.end();
   } catch (error) {
-    console.error('âŒ /transactions/export/csv error:', error);
-    return res.status(500).json({ success: false, error: 'Failed to export transactions' });
+    console.error('❌ /transactions/export/csv error:', error);
+    return res.end();
   }
 });
 
