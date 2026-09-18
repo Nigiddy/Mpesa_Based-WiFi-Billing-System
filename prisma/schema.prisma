@@ -7,11 +7,21 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// L-5: Role enum for RBAC. SUPER_ADMIN retains all existing permissions.
+// Adding roles now is far cheaper than retrofitting authMiddleware after
+// multiple real admins exist.
+enum admin_role {
+  SUPER_ADMIN
+  VIEWER
+}
+
 model admin {
-  id        Int      @id @default(autoincrement())
-  email     String   @unique(map: "Admin_email_key")
+  id        Int        @id @default(autoincrement())
+  email     String     @unique(map: "Admin_email_key")
   password  String
-  createdAt DateTime @default(now())
+  // L-5: Defaults to SUPER_ADMIN so no existing row breaks on migration.
+  role      admin_role @default(SUPER_ADMIN)
+  createdAt DateTime   @default(now())
   updatedAt DateTime
 }
 
@@ -34,6 +44,11 @@ model payment {
   userId               Int?
   phone                String
   amount               Int
+  // L-3: Explicit currency field — prevents ambiguity if multi-currency support is added.
+  currency             String                @default("KES")
+  // L-7: Store plan key at initiation so package lookups never rely on price-matching.
+  // NULL for rows created before this migration; fall back to getPackageByAmount for those.
+  planKey              String?
   status               payment_status        @default(PENDING)
   mpesa_reference      String?               @unique(map: "Payment_mpesa_reference_key")
   mpesa_receipt_number String?               @unique(map: "Payment_mpesa_receipt_number_key")
@@ -54,11 +69,11 @@ model payment {
 
   @@index([createdAt], map: "Payment_createdAt_idx")
   @@index([macAddress], map: "Payment_macAddress_idx")
-  @@index([mpesa_reference], map: "Payment_mpesa_reference_idx")
+  // L-1: @@index([mpesa_reference]) and @@index([transactionId]) removed —
+  // @unique constraints already create B-tree indexes in MySQL.
   @@index([phone, status, createdAt], map: "Payment_phone_status_createdAt_idx")
   @@index([status, createdAt], map: "Payment_status_createdAt_idx")
   @@index([status], map: "Payment_status_idx")
-  @@index([transactionId], map: "Payment_transactionId_idx")
   @@index([userId], map: "Payment_userId_idx")
 }
 
@@ -107,10 +122,20 @@ model session {
 model supportrequest {
   id        Int      @id @default(autoincrement())
   phone     String
-  message   String @db.Text
+  message   String   @db.Text
+  // L-6: Added fields to match what the contact form collects and persist fully.
+  name      String?
+  email     String?
+  subject   String?
   createdAt DateTime @default(now())
+
+  @@index([createdAt], map: "SupportRequest_createdAt_idx")
 }
 
+// L-2 CONTRACT: SystemSettings is a strict singleton — only the row with id=1
+// must ever exist. The DB @default(1) does NOT prevent a second row (id=2)
+// from being inserted. All code MUST use upsert({ where: { id: 1 } }).
+// Never call prisma.systemSettings.create() directly.
 model systemsettings {
   id                 Int      @id @default(1)
   networkName        String   @default("Qonnect")
@@ -140,8 +165,8 @@ model user {
   payment       payment[]
   session       session[]
 
-  @@index([macAddress], map: "User_macAddress_idx")
-  @@index([phone], map: "User_phone_idx")
+  // L-1: @@index([macAddress]) and @@index([phone]) removed —
+  // @unique constraints on those fields already create B-tree indexes in MySQL.
   @@index([status], map: "User_status_idx")
 }
 
@@ -149,7 +174,10 @@ model voucher {
   id                Int                 @id @default(autoincrement())
   code              String              @unique(map: "Voucher_code_key")
   planKey           String
-  durationMs        BigInt
+  // L-4: Changed from BigInt to Int. Max current duration = 24h = 86,400,000 ms,
+  // which fits safely in a 32-bit signed int (max ~2.1 billion).
+  // BigInt caused JSON.stringify to throw on any route serialising a raw Voucher.
+  durationMs        Int
   maxUses           Int                 @default(1)
   currentUses       Int                 @default(0)
   expiresAt         DateTime?
@@ -158,7 +186,7 @@ model voucher {
   updatedAt         DateTime
   voucherredemption voucherredemption[]
 
-  @@index([code], map: "Voucher_code_idx")
+  // L-1: @@index([code]) removed — @unique already creates the index.
   @@index([createdAt], map: "Voucher_createdAt_idx")
   @@index([expiresAt], map: "Voucher_expiresAt_idx")
   @@index([planKey], map: "Voucher_planKey_idx")
