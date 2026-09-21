@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const prisma = require("../config/prismaClient");
 const authMiddleware = require("../middleware/authMiddleware");
+const { requireSuperAdmin } = require("../middleware/authMiddleware");
 const { disconnectAllUsers, disconnectByMac, getActiveDevices, getStatus } = require("../config/mikrotik");
 const { csrfProtection, generateCsrfToken } = require("../middleware/csrfMiddleware");
 const { logAudit } = require("../utils/auditLogger");
@@ -251,7 +252,7 @@ router.get("/users", authMiddleware, async (req, res) => {
   }
 });
 
-router.post("/users/:id/block", authMiddleware, csrfProtection, async (req, res) => {
+router.post("/users/:id/block", authMiddleware, requireSuperAdmin, csrfProtection, async (req, res) => {
   try {
     const { id } = req.params;
     const adminId = req.admin?.id;
@@ -294,7 +295,7 @@ router.post("/users/:id/block", authMiddleware, csrfProtection, async (req, res)
   }
 });
 
-router.post("/users/:id/unblock", authMiddleware, csrfProtection, async (req, res) => {
+router.post("/users/:id/unblock", authMiddleware, requireSuperAdmin, csrfProtection, async (req, res) => {
   try {
     const { id } = req.params;
     const adminId = req.admin?.id;
@@ -319,7 +320,7 @@ router.post("/users/:id/unblock", authMiddleware, csrfProtection, async (req, re
   }
 });
 
-router.post("/users/:id/disconnect", authMiddleware, csrfProtection, async (req, res) => {
+router.post("/users/:id/disconnect", authMiddleware, requireSuperAdmin, csrfProtection, async (req, res) => {
   try {
     const { id } = req.params;
     const adminId = req.admin?.id;
@@ -366,7 +367,7 @@ router.post("/users/:id/disconnect", authMiddleware, csrfProtection, async (req,
   }
 });
 
-router.delete("/users/:id", authMiddleware, csrfProtection, async (req, res) => {
+router.delete("/users/:id", authMiddleware, requireSuperAdmin, csrfProtection, async (req, res) => {
   try {
     const { id } = req.params;
     const adminId = req.admin?.id;
@@ -527,7 +528,7 @@ router.get("/transactions", authMiddleware, async (req, res) => {
   }
 });
 
-router.post("/transactions/:transactionId/refund", authMiddleware, csrfProtection, async (req, res) => {
+router.post("/transactions/:transactionId/refund", authMiddleware, requireSuperAdmin, csrfProtection, async (req, res) => {
   try {
     const { transactionId } = req.params;
     const adminId = req.admin?.id;
@@ -766,7 +767,7 @@ router.get("/network/devices", authMiddleware, async (req, res) => {
   return res.json({ success: true, data: resp.data });
 });
 
-router.post("/network/disconnect-all", authMiddleware, csrfProtection, async (req, res) => {
+router.post("/network/disconnect-all", authMiddleware, requireSuperAdmin, csrfProtection, async (req, res) => {
   try {
     const adminId = req.admin?.id;
     const resp = await disconnectAllUsers();
@@ -812,7 +813,7 @@ router.get("/system/settings", authMiddleware, async (req, res) => {
 });
 
 // POST system settings â€” FIXED: Now actually saves to database
-router.post("/system/settings", authMiddleware, csrfProtection, async (req, res) => {
+router.post("/system/settings", authMiddleware, requireSuperAdmin, csrfProtection, async (req, res) => {
   try {
     const adminId = req.admin?.id;
     const {
