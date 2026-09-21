@@ -21,6 +21,9 @@ const extractToken = (req) => {
  *            outage does not permanently lock admins out of the system.
  *  AUTH-7  — Verifies the admin account still exists in the database, so a
  *            demoted or deleted admin is rejected even with a valid token.
+ *  AUTH-R3 — Fetches admin.role from DB on every request and exposes it as
+ *            req.admin.dbRole so requireSuperAdmin always uses live data,
+ *            not a potentially stale JWT claim.
  */
 const authMiddleware = async (req, res, next) => {
   const token = extractToken(req);
@@ -56,17 +59,21 @@ const authMiddleware = async (req, res, next) => {
 
     // AUTH-7 FIX: Verify admin account still exists in the database.
     // This catches deleted/demoted admins whose tokens have not yet expired.
+    //
+    // AUTH-R3 FIX: Select `role` so we can enforce RBAC at the endpoint level.
+    // req.admin.dbRole is always the live DB value — immune to stale JWT claims.
     const admin = await prisma.admin.findUnique({
       where: { id: decoded.id },
-      select: { id: true, email: true },
+      select: { id: true, email: true, role: true },
     });
 
     if (!admin) {
       return res.status(401).json({ error: "Admin account not found or has been removed." });
     }
 
-    // Attach decoded token payload + fresh DB data to the request
-    req.admin = { ...decoded, ...admin };
+    // Attach decoded token payload + fresh DB data to the request.
+    // dbRole is the DB enum value (SUPER_ADMIN | VIEWER) — used by requireSuperAdmin.
+    req.admin = { ...decoded, ...admin, dbRole: admin.role };
     next();
   } catch (err) {
     if (err.name === "TokenExpiredError") {
@@ -82,5 +89,31 @@ const authMiddleware = async (req, res, next) => {
   }
 };
 
+/**
+ * Authorization guard for SUPER_ADMIN-only endpoints.
+ *
+ * AUTH-R3 FIX: Must be placed AFTER authMiddleware in the middleware chain.
+ * Rejects VIEWER admins with 403 Forbidden so they cannot perform destructive
+ * operations (block/delete users, system settings, disconnect-all, etc.).
+ *
+ * Usage:
+ *   router.post("/users/:id/block", authMiddleware, requireSuperAdmin, csrfProtection, handler);
+ */
+const requireSuperAdmin = (req, res, next) => {
+  if (req.admin?.dbRole !== "SUPER_ADMIN") {
+    return res.status(403).json({
+      error: "Super admin access required.",
+      message: "This action is restricted to SUPER_ADMIN accounts.",
+    });
+  }
+  next();
+};
+
+// ── Dual export ────────────────────────────────────────────────────────────────
+// Backward-compat: `const authMiddleware = require('../middleware/authMiddleware')`
+// Named import:   `const { authMiddleware, requireSuperAdmin } = require(...)`
+authMiddleware.requireSuperAdmin = requireSuperAdmin;
 module.exports = authMiddleware;
+module.exports.authMiddleware = authMiddleware;
+module.exports.requireSuperAdmin = requireSuperAdmin;
 

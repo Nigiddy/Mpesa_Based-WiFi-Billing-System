@@ -12,6 +12,7 @@
 const express = require('express');
 const prisma = require('../../config/prismaClient');
 const authMiddleware = require('../../middleware/authMiddleware');
+const { requireSuperAdmin } = require('../../middleware/authMiddleware');
 const { logAudit } = require('../../utils/auditLogger');
 const { PACKAGES } = require('../../lib/packages');
 // M-5 FIX: serializeBigInts is now imported from the shared helpers module
@@ -20,7 +21,7 @@ const { generateVoucherCode, deriveVoucherStatus, serializeBigInts } = require('
 
 const router = express.Router();
 
-router.post('/generate', authMiddleware, async (req, res) => {
+router.post('/generate', authMiddleware, requireSuperAdmin, async (req, res) => {
   try {
     const {
       planKey,

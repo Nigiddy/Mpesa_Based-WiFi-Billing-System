@@ -16,13 +16,18 @@ enum admin_role {
 }
 
 model admin {
-  id        Int        @id @default(autoincrement())
-  email     String     @unique(map: "Admin_email_key")
-  password  String
+  id             Int        @id @default(autoincrement())
+  email          String     @unique(map: "Admin_email_key")
+  password       String
   // L-5: Defaults to SUPER_ADMIN so no existing row breaks on migration.
-  role      admin_role @default(SUPER_ADMIN)
-  createdAt DateTime   @default(now())
-  updatedAt DateTime
+  role           admin_role @default(SUPER_ADMIN)
+  // AUTH-W2: Track failed login attempts and temporary lockouts.
+  // failedAttempts is reset to 0 on every successful login.
+  // lockedUntil, when set and in the future, blocks all login attempts.
+  failedAttempts Int        @default(0)
+  lockedUntil    DateTime?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime
 }
 
 model auditlog {

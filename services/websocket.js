@@ -1,6 +1,7 @@
 const WebSocket = require('ws');
 const url = require('url');
 const jwt = require('jsonwebtoken');
+const { getRedisClient } = require('../config/redis');
 require('dotenv').config();
 
 let wssAdmin;
@@ -37,7 +38,7 @@ const initWebSocket = (server) => {
     wssAdmin = new WebSocket.Server({ noServer: true });
     wssPayment = new WebSocket.Server({ noServer: true });
 
-    server.on('upgrade', (request, socket, head) => {
+    server.on('upgrade', async (request, socket, head) => {
         const parsedUrl = url.parse(request.url);
         const pathname = parsedUrl.pathname || '';
 
@@ -62,6 +63,27 @@ const initWebSocket = (server) => {
                 if (decoded.role !== 'admin') {
                     throw new Error('Insufficient role');
                 }
+
+                // AUTH-R4 FIX: Check the Redis denylist for revoked tokens.
+                // Without this check, a logged-out token (or one revoked via refresh)
+                // would remain valid on the WebSocket path until it naturally expires.
+                // Fail open if Redis is unavailable — consistent with authMiddleware policy.
+                if (decoded.jti) {
+                    const redis = getRedisClient();
+                    if (redis) {
+                        try {
+                            const isDenied = await redis.get(`denylist:${decoded.jti}`);
+                            if (isDenied) {
+                                socket.write('HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\nConnection: close\r\n\r\n');
+                                socket.destroy();
+                                return;
+                            }
+                        } catch (redisErr) {
+                            console.warn('[WS] Redis denylist check failed — proceeding without revocation check:', redisErr.message);
+                        }
+                    }
+                }
+
                 request.admin = decoded;
             } catch {
                 socket.write('HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\nConnection: close\r\n\r\n');
