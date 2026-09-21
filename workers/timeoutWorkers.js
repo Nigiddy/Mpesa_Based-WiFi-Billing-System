@@ -3,20 +3,11 @@ const prisma = require('../config/prismaClient');
 const { PaymentStatus } = require('@prisma/client');
 const { disconnectByMac, whitelistMAC, getActiveSessions, closeMikrotikConnection } = require('../config/mikrotik');
 const { logAudit } = require('../utils/auditLogger');
-// BOOT-5 FIX: Use the shared Redis singleton instead of creating a private connection
-const { getRedisClient } = require('../config/redis');
-
-// BOOT-5 FIX: Replaced private _redisConnection with the shared singleton.
-// getRedisClient() returns null when Redis is unavailable; callers handle that
-// gracefully by skipping queue operations (payments fall back to sync path).
-
-/**
- * Thin wrapper kept for internal use — returns the shared Redis client.
- * @returns {import('ioredis').Redis | null}
- */
-function getRedisConnection() {
-  return getRedisClient();
-}
+// A-4 FIX: Two separate ioredis connections — one for Queue producers (non-blocking),
+// one for Worker consumers (blocking, maxRetriesPerRequest: null).
+// Sharing a single connection between producers and Workers caused producers to
+// stall while Workers blocked on XREAD.
+const { getRedisClient, getWorkerRedisClient, closeWorkerRedisClient } = require('../config/redis');
 
 // ─── Queue factories ──────────────────────────────────────────────────────────
 // Each queue is created lazily the first time it is requested. Returns null
@@ -67,7 +58,8 @@ const paymentTimeoutWorker = paymentTimeoutQueue ? new Worker('payment-timeout',
     logAudit('PAYMENT_TIMEOUT_WORKER_ERROR', { transactionId, error: error.message });
     throw error; // Re-throw to allow for retries
   }
-}, { connection: getRedisConnection() }) : null;
+// A-4: Worker uses blocking connection (maxRetriesPerRequest: null)
+}, { connection: getWorkerRedisClient() }) : null;
 
 paymentTimeoutWorker && paymentTimeoutWorker.on('failed', (job, error) => {
   console.error(`🚨 [Payment Timeout Worker] Job ${job.id} for transaction ${job.data.transactionId} failed permanently.`, error);
@@ -104,7 +96,8 @@ const sessionExpiryWorker = sessionExpiryQueue ? new Worker('session-expiry', as
     logAudit('SESSION_EXPIRY_WORKER_ERROR', { sessionId, macAddress, error: error.message });
     throw error;
   }
-}, { connection: getRedisConnection() }) : null;
+// A-4: Worker uses blocking connection
+}, { connection: getWorkerRedisClient() }) : null;
 
 sessionExpiryWorker && sessionExpiryWorker.on('failed', (job, error) => {
   console.error(`🚨 [Session Expiry Worker] Job ${job.id} for MAC ${job.data.macAddress} failed permanently.`, error);
@@ -156,7 +149,8 @@ const macWhitelistRetryWorker = macWhitelistRetryQueue ? new Worker('mac-whiteli
     logAudit('MAC_WHITELIST_RETRY_ERROR', { paymentId, error: error.message });
     throw error;
   }
-}, { connection: getRedisConnection() }) : null;
+// A-4: Worker uses blocking connection
+}, { connection: getWorkerRedisClient() }) : null;
 
 macWhitelistRetryWorker && macWhitelistRetryWorker.on('failed', (job, error) => {
   console.error(`🚨 [MAC Retry Worker] Job ${job.id} for payment ${job.data.paymentId} failed permanently.`, error);
@@ -328,7 +322,8 @@ const sessionSyncWorker = sessionSyncQueue ? new Worker(
       console.log('[Session Sync] All active DB sessions confirmed on MikroTik.');
     }
   },
-  { connection: getRedisConnection() }
+  // A-4: Worker uses blocking connection (maxRetriesPerRequest: null)
+  { connection: getWorkerRedisClient() }
 ) : null;
 
 sessionSyncWorker && sessionSyncWorker.on('failed', (job, err) => {
@@ -362,6 +357,10 @@ async function closeWorkers() {
       .map((w) => w.close().catch((e) => console.error('[Workers] Error closing worker:', e.message)))
   );
   console.log('[Workers] All BullMQ workers closed');
+
+  // A-4: Close the worker Redis connection after all workers are drained.
+  // The standard Queue connection is closed separately by closeRedisClient().
+  await closeWorkerRedisClient();
 
   // Close the persistent MikroTik singleton connection (P-5)
   await closeMikrotikConnection();

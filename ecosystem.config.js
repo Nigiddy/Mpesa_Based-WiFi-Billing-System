@@ -1,8 +1,12 @@
 module.exports = {
   apps: [
     {
+      // A-2 FIX: Point at the Node launcher instead of index.js directly.
+      // PM2 does not invoke a shell, so 'prisma migrate deploy && node index.js'
+      // is not valid here. scripts/start.js runs the migration synchronously
+      // via execFileSync, then requires index.js — cross-platform, no bash needed.
       name: 'kibaruani-backend',
-      script: 'index.js',
+      script: 'scripts/start.js',
       instances: 1, // Single instance ensures WebSocket connections & BullMQ workers stay coordinated
       exec_mode: 'fork',
       watch: false,
