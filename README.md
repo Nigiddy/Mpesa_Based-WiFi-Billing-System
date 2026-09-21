@@ -60,41 +60,51 @@ MPESA_PASSKEY=your_mpesa_passkey
 MPESA_CALLBACK_URL=https://your-callback-url.ngrok.io/mpesa/callback
 NEXT_PUBLIC_API_URL=http://localhost:5000
 FRONTEND_ORIGIN=http://localhost:3000
+
+# Optional — seed script defaults (used by npx prisma db seed / npm run db:seed)
+SEED_ADMIN_EMAIL=admin@qonnect.com
+SEED_ADMIN_PASSWORD=Admin@1234
 ```
 
 > `DATABASE_URL` must point to your MySQL database. Example:
 > `DATABASE_URL="mysql://root:password@localhost:3306/wifi_billing"`
 
 
-## Fresh Database Setup (Crucial)
+## Fresh Database Setup
 
-This project uses Prisma and requires the schema to be pushed to your MySQL database before use.
+This project uses **Prisma Migrate** for schema management. Never use `prisma db push` in production — it bypasses the migration history and causes schema drift.
 
-1. Ensure your MySQL database exists.
-2. From the project root, run:
-
-```bash
-npx prisma db push
-```
-
-If you prefer migrations instead, you can also run:
+1. Make sure your MySQL database exists and `DATABASE_URL` is set in `.env`.
+2. Apply all migrations:
 
 ```bash
-npx prisma migrate dev --name init
+npx prisma migrate deploy
 ```
 
-
-### Admin users are NOT seeded automatically
-
-A fresh database will have no admin records. To create the first admin user, run:
+3. Seed the database (creates the `SystemSettings` singleton and a default admin account):
 
 ```bash
-node scripts/addAdmin.js
+npx prisma db seed
+# or equivalently:
+npm run db:seed
 ```
 
-Then log in with the email and password you configured in `scripts/addAdmin.js`.
+> The seed script is **idempotent** — safe to run multiple times. It will not overwrite an existing admin or system-settings row.
 
-If you want a custom admin account, edit the `email` and `password` fields in `scripts/addAdmin.js` before running the command.
+### Default admin credentials
+
+| Field    | Default value          | Override with env var   |
+|----------|------------------------|-------------------------|
+| Email    | `admin@qonnect.com`    | `SEED_ADMIN_EMAIL`      |
+| Password | `Admin@1234`           | `SEED_ADMIN_PASSWORD`   |
+
+> ⚠️ **Change the default password immediately after first login.**
+
+To use custom credentials without editing source code, set the env vars before seeding:
+
+```bash
+SEED_ADMIN_EMAIL=you@example.com SEED_ADMIN_PASSWORD=StrongPassWord npm run db:seed
+```
 
 
 ## Development Workflow
@@ -121,6 +131,10 @@ npm run dev
 ```
 
 This starts the Express backend at `http://localhost:5000` by default.
+
+> **Production (PM2):** `npm run pm2:start` points PM2 at `scripts/start.js`, which
+> automatically runs `prisma migrate deploy` before starting the server. No manual
+> migration step is needed on deploy.
 
 
 ### 3. Start the frontend
