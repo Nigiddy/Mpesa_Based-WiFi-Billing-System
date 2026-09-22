@@ -1,6 +1,15 @@
 const rateLimit = require('express-rate-limit');
 const { RedisStore } = require('rate-limit-redis');
-const { getRedisClient } = require('../config/redis');
+// RATE-LIMIT FIX: Use the dedicated rate-limit client (enableOfflineQueue: true)
+// instead of the main producer client (enableOfflineQueue: false).
+//
+// RedisStore.init() issues a SCRIPT LOAD command synchronously during module
+// evaluation, before the ioredis TCP handshake completes. The main producer
+// client's enableOfflineQueue: false causes that command to throw
+// "Stream isn't writeable". The rate-limit client buffers it and replays it
+// once connected — eliminating the startup warning and ensuring the Redis-backed
+// store is always used when Redis is available.
+const { getRateLimitRedisClient } = require('../config/redis');
 
 /**
  * AUTH-R2 FIX: Build a Redis-backed store for express-rate-limit.
@@ -18,7 +27,7 @@ const { getRedisClient } = require('../config/redis');
  * @param {string} prefix - Redis key prefix to namespace this limiter's counters.
  */
 function createStore(prefix) {
-  const redis = getRedisClient();
+  const redis = getRateLimitRedisClient();
   if (!redis) {
     console.warn(`[RateLimit] Redis unavailable — ${prefix} limiter using in-memory store (not cluster-safe)`);
     return undefined;

@@ -146,9 +146,78 @@ async function closeWorkerRedisClient() {
   }
 }
 
+// ── Rate-limit store connection ─────────────────────────────────────────────
+let _rateLimitClient = null;
+
+/**
+ * Returns a dedicated ioredis client for express-rate-limit's RedisStore.
+ *
+ * RATE-LIMIT FIX: Unlike getRedisClient(), this client uses
+ * enableOfflineQueue: true so that the RedisStore.init() SCRIPT LOAD command
+ * — issued synchronously during module evaluation before the TCP handshake
+ * completes — is buffered in ioredis and replayed once the connection is ready.
+ *
+ * Using enableOfflineQueue: false (the main producer client's setting) causes
+ * SCRIPT LOAD to throw "Stream isn't writeable" at startup.
+ *
+ * This is a separate connection so that the offline queue on this client never
+ * blocks or interferes with the fail-fast behaviour of the producer client.
+ *
+ * @returns {import('ioredis').Redis | null}
+ */
+function getRateLimitRedisClient() {
+  if (_rateLimitClient) return _rateLimitClient;
+
+  try {
+    _rateLimitClient = new Redis(process.env.REDIS_URL || 'redis://localhost:6379', {
+      maxRetriesPerRequest: 3,
+      enableOfflineQueue: true, // Buffer SCRIPT LOAD until the connection is ready
+      lazyConnect: false,
+    });
+
+    _rateLimitClient.on('error', (err) => {
+      console.error('[Redis:ratelimit] Connection error:', err.message);
+    });
+
+    _rateLimitClient.on('connect', () => {
+      console.log('[Redis:ratelimit] Connected successfully');
+    });
+
+    _rateLimitClient.on('reconnecting', () => {
+      console.warn('[Redis:ratelimit] Reconnecting...');
+    });
+
+    return _rateLimitClient;
+  } catch (err) {
+    console.error('[Redis:ratelimit] Failed to create connection:', err.message);
+    _rateLimitClient = null;
+    return null;
+  }
+}
+
+/**
+ * Gracefully closes the rate-limit Redis connection.
+ * Called during graceful shutdown.
+ */
+async function closeRateLimitRedisClient() {
+  if (_rateLimitClient) {
+    try {
+      await _rateLimitClient.quit();
+      _rateLimitClient = null;
+      console.log('[Redis:ratelimit] Connection closed gracefully');
+    } catch (err) {
+      console.error('[Redis:ratelimit] Error during close:', err.message);
+      try { _rateLimitClient?.disconnect(); } catch (_) {}
+      _rateLimitClient = null;
+    }
+  }
+}
+
 module.exports = {
   getRedisClient,
   closeRedisClient,
   getWorkerRedisClient,
   closeWorkerRedisClient,
+  getRateLimitRedisClient,
+  closeRateLimitRedisClient,
 };

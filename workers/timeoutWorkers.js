@@ -19,7 +19,11 @@ let _macWhitelistRetryQueue = null;
 let _sessionSyncQueue = null;
 
 function createQueue(name) {
-  const conn = getRedisConnection();
+  // A-4 FIX (BUG CORRECTION): was `getRedisConnection()` which is undefined —
+  // no such function exists. The correct function for Queue producers is
+  // `getRedisClient()` (maxRetriesPerRequest: 3, non-blocking).
+  // Workers still use getWorkerRedisClient() (maxRetriesPerRequest: null).
+  const conn = getRedisClient();
   if (!conn) {
     console.warn(`[Workers] Redis unavailable — queue '${name}' not created. Jobs will be skipped.`);
     return null;
