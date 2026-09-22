@@ -16,6 +16,21 @@ let server = null;
 const gracefulShutdown = async (signal) => {
   console.log(`\n📛 ${signal} received. Shutting down gracefully...`);
 
+  // BOOT-14 FIX (moved): Arm the forced-exit watchdog only when a real shutdown
+  // is in progress. Previously this timer lived at module-load time with .unref(),
+  // which caused it to fire during normal healthy operation: BullMQ Worker
+  // blockingConnections (XREAD TCP sockets) are ref'd by default and kept the
+  // event loop alive past 12 s, so process.exit(1) was called unconditionally
+  // on every run. Moving it here means it only exists during an active shutdown
+  // sequence and can only fire if gracefulShutdown itself stalls.
+  const forceExitTimer = setTimeout(() => {
+    console.error("❌ Forced exit: graceful shutdown exceeded 12 s deadline.");
+    process.exit(1);
+  }, 12000);
+  // Unref so the timer itself doesn't keep the event loop alive if everything
+  // else closes cleanly before the 12 s window expires.
+  forceExitTimer.unref();
+
   // 1. Stop accepting new HTTP connections
   if (server) {
     await new Promise((resolve) => server.close(resolve));
@@ -287,11 +302,4 @@ server = app.listen(PORT, async () => {
   }
 });
 
-// BOOT-14 FIX: Force exit after 12 seconds — slightly longer than PM2's kill_timeout
-// (set to 12000 in ecosystem.config.js) to ensure Node's own handler fires first.
-setTimeout(() => {
-  // This only fires if gracefulShutdown was called and somehow stalled
-  console.error("❌ Forced exit after shutdown timeout");
-  process.exit(1);
-}, 12000).unref(); // .unref() prevents this timer from keeping the process alive normally
 
