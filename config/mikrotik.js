@@ -129,6 +129,17 @@ function buildClientOptions() {
     port = useTls ? 8729 : 8728;
   }
 
+  // P2 FIX: Detect and warn on the common TLS/port contradiction.
+  // Port 8728 is the plain-text RouterOS API; TLS uses port 8729 (api-ssl).
+  // Connecting with TLS to port 8728 causes the router to reject the handshake.
+  if (useTls && port === 8728) {
+    console.warn(
+      "⚠️  MikroTik config conflict: MIKROTIK_USE_TLS=true but MIKROTIK_PORT=8728 " +
+      "(plain-text API port). TLS requires port 8729 (api-ssl service on RouterOS). " +
+      "Either set MIKROTIK_PORT=8729 or set MIKROTIK_USE_TLS=false."
+    );
+  }
+
   return { host, user, password, port, tls: useTls, timeout: 5000 };
 }
 

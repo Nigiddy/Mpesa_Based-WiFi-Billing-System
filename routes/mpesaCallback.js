@@ -13,8 +13,10 @@ const { validateCallbackStructure } = require("../validators/paymentValidator");
 // validateCallbackSecurityMiddleware + BullMQ jobId idempotency are sufficient.
 const { logAudit } = require("../utils/auditLogger");
 const { sendPaymentStatus } = require("../services/websocket");
-// BOOT-5 FIX: Use the shared Redis singleton instead of creating a private connection
-const { getRedisClient } = require("../config/redis");
+// BOOT-5 FIX: Use the shared Redis singletons instead of creating private connections.
+// getRedisClient()       — Queue producers (maxRetriesPerRequest: 3, non-blocking)
+// getWorkerRedisClient() — BullMQ Workers (maxRetriesPerRequest: null, required by BullMQ)
+const { getRedisClient, getWorkerRedisClient } = require("../config/redis");
 
 const router = express.Router();
 
@@ -135,8 +137,12 @@ async function updatePaymentStatusWithAudit(client, paymentId, oldStatus, newSta
 async function setupPaymentWorker() {
   const { Worker } = require('bullmq');
   const { getSessionExpiryQueue } = require('../workers/timeoutWorkers');
-  // BOOT-5 FIX: Use the shared Redis singleton instead of creating a private connection
-  const connection = getRedisClient();
+  // WORKER-FIX: BullMQ Workers must receive a connection with
+  // maxRetriesPerRequest: null (blocking XREAD requirement). Using the standard
+  // producer client (maxRetriesPerRequest: 3) causes BullMQ to throw:
+  //   "BullMQ: Your redis options maxRetriesPerRequest must be null"
+  // which previously triggered unhandledRejection → gracefulShutdown → forced exit.
+  const connection = getWorkerRedisClient();
   if (!connection) {
     console.warn('[mpesaCallback] Redis not available — payment worker not started');
     return null;

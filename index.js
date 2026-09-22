@@ -30,10 +30,11 @@ const gracefulShutdown = async (signal) => {
     console.error("⚠️  Error closing BullMQ workers:", e.message);
   }
 
-  // 3. Close the shared Redis connection after workers are done
+  // 3. Close the shared Redis connections after workers are done
   try {
-    const { closeRedisClient } = require("./config/redis");
+    const { closeRedisClient, closeRateLimitRedisClient } = require("./config/redis");
     await closeRedisClient();
+    await closeRateLimitRedisClient();
   } catch (e) {
     console.error("⚠️  Error closing Redis:", e.message);
   }
