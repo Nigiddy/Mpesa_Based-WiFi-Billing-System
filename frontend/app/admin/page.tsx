@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Activity, Users, CreditCard, Settings, BarChart3, PieChart, Ticket } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -27,7 +27,16 @@ export default function AdminDashboard() {
   const [healthStatus, setHealthStatus] = useState<any>(null)
   const [activityLog, setActivityLog] = useState<Array<any>>([])
   const [isLoading, setIsLoading] = useState(true)
-  const { admin, logout, isAuthenticated } = useAuth()
+  const { isAuthenticated } = useAuth()
+
+  // Track which tabs have been visited so each panel mounts only once.
+  // A Set stored in a ref avoids triggering re-renders when it updates.
+  const visitedTabs = useRef<Set<string>>(new Set(["overview"]))
+
+  const handleTabChange = (tab: string) => {
+    visitedTabs.current.add(tab)
+    setActiveTab(tab)
+  }
 
   useEffect(() => {
     // Only initialize data fetching and WebSocket once the admin session is confirmed.
@@ -132,7 +141,7 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-8">
+        <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-8">
           
           {/* Minimalist Tabs */}
           <TabsList className="bg-transparent border-b border-border w-full justify-start h-auto p-0 rounded-none gap-6 overflow-x-auto">
@@ -248,11 +257,21 @@ export default function AdminDashboard() {
             </div>
           </TabsContent>
 
-          {/* OTHER TABS */}
-          <TabsContent value="payments" className="outline-none"><PaymentManagement /></TabsContent>
-          <TabsContent value="vouchers" className="outline-none"><VoucherManagement /></TabsContent>
-          <TabsContent value="users"    className="outline-none"><UserManagement /></TabsContent>
-          <TabsContent value="settings" className="outline-none"><SystemSettings /></TabsContent>
+          {/* OTHER TABS — each panel mounts only when its tab is first opened.
+              Once mounted it stays mounted (hidden by TabsContent) so data is
+              not re-fetched when the user switches back to a tab they've already visited. */}
+          <TabsContent value="payments" className="outline-none">
+            {visitedTabs.current.has("payments") && <PaymentManagement />}
+          </TabsContent>
+          <TabsContent value="vouchers" className="outline-none">
+            {visitedTabs.current.has("vouchers") && <VoucherManagement />}
+          </TabsContent>
+          <TabsContent value="users" className="outline-none">
+            {visitedTabs.current.has("users") && <UserManagement />}
+          </TabsContent>
+          <TabsContent value="settings" className="outline-none">
+            {visitedTabs.current.has("settings") && <SystemSettings />}
+          </TabsContent>
         </Tabs>
       </main>
     </div>

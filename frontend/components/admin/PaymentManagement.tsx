@@ -168,10 +168,7 @@ const PaymentManagement = () => {
                                 <DropdownMenuItem
                                   onClick={async () => {
                                     try {
-                                      const response = await apiClient.downloadReceipt(transaction.id)
-                                      if (response.success && response.data) {
-                                        window.open(response.data.receiptUrl, "_blank")
-                                      }
+                                      await apiClient.downloadReceipt(transaction.id)
                                     } catch (error) {
                                       toast.error("Failed to download receipt")
                                     }
