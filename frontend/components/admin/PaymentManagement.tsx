@@ -1,5 +1,5 @@
 "use client"
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useDeferredValue } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -17,6 +17,7 @@ const PaymentManagement = () => {
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState("")
+  const deferredSearch = useDeferredValue(searchTerm)
   const [statusFilter, setStatusFilter] = useState("all")
   const [currentPage, setCurrentPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
@@ -26,7 +27,7 @@ const PaymentManagement = () => {
     setLoading(true)
     try {
       const response = await apiClient.getTransactions({
-        search: searchTerm,
+        search: deferredSearch,
         status: statusFilter,
         page: currentPage,
         limit: 10,
@@ -44,7 +45,7 @@ const PaymentManagement = () => {
     } finally {
       setLoading(false)
     }
-  }, [searchTerm, statusFilter, currentPage])
+  }, [deferredSearch, statusFilter, currentPage])
 
   useEffect(() => {
     fetchTransactions()
@@ -82,7 +83,7 @@ const PaymentManagement = () => {
             className="pl-10 bg-white/50 dark:bg-slate-800/50 border-slate-200 dark:border-white/10"
           />
         </div>
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
+        <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); setCurrentPage(1) }}>
           <SelectTrigger className="w-full sm:w-48 bg-white/50 dark:bg-slate-800/50 border-slate-200 dark:border-white/10">
             <SelectValue placeholder="Filter by status" />
           </SelectTrigger>
@@ -165,13 +166,7 @@ const PaymentManagement = () => {
                                   Process Refund
                                 </DropdownMenuItem>
                                 <DropdownMenuItem
-                                  onClick={async () => {
-                                    try {
-                                      await apiClient.downloadReceipt(transaction.id)
-                                    } catch (error) {
-                                      toast.error("Failed to download receipt")
-                                    }
-                                  }}
+                                  onClick={() => apiClient.downloadReceipt(transaction.id)}
                                 >
                                   <Download className="h-4 w-4 mr-2" />
                                   Download Receipt
