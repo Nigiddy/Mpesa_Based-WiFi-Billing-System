@@ -39,8 +39,6 @@ const AdminHeader = ({ children, onMenuToggle }: AdminHeaderProps) => {
                 <Menu className="h-5 w-5" />
               </Button>
             )}
-            <div className="flex items-center">
-            </div>
           </div>
 
           {/* Right Section: Actions & Profile */}
