@@ -109,6 +109,7 @@ const UserManagement = () => {
   }
 
   return (
+    <>
     <div className="space-y-6">
       {/* Search and Filter */}
       <div className="flex flex-col sm:flex-row gap-4">
@@ -263,6 +264,7 @@ const UserManagement = () => {
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
+    </>
   )
 }
 export default UserManagement
