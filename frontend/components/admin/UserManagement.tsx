@@ -4,9 +4,15 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { StatusBadge } from "@/components/ui/status-badge"
+import { Skeleton } from "@/components/ui/skeleton"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel,
+  AlertDialogContent, AlertDialogDescription, AlertDialogFooter,
+  AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { Search, Download, Eye, UserX, WifiOff, MoreHorizontal, CheckCircle, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 import { apiClient, type User } from "@/lib/api"
@@ -22,6 +28,7 @@ const UserManagement = () => {
   const [currentPage, setCurrentPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
   const [refreshKey, setRefreshKey] = useState(0)
+  const [pendingDeleteId, setPendingDeleteId] = useState<number | null>(null)
 
   const fetchUsers = useCallback(async () => {
     setLoading(true)
@@ -143,8 +150,18 @@ const UserManagement = () => {
         </CardHeader>
         <CardContent>
           {loading ? (
-            <div className="flex items-center justify-center py-8">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+            <div className="space-y-3 py-2">
+              {[...Array(5)].map((_, i) => (
+                <div key={i} className="flex gap-4">
+                  <Skeleton className="h-5 w-28 rounded" />
+                  <Skeleton className="h-5 w-36 rounded" />
+                  <Skeleton className="h-5 w-16 rounded" />
+                  <Skeleton className="h-5 w-24 rounded" />
+                  <Skeleton className="h-5 w-20 rounded" />
+                  <Skeleton className="h-5 w-20 rounded" />
+                  <Skeleton className="h-5 w-8 rounded" />
+                </div>
+              ))}
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -194,11 +211,7 @@ const UserManagement = () => {
                             )}
                             <DropdownMenuItem
                               className="text-destructive"
-                              onClick={() => {
-                                if (confirm(MESSAGES.CONFIRMATIONS.DELETE_USER)) {
-                                  handleUserAction(user.id, "delete")
-                                }
-                              }}
+                              onClick={() => setPendingDeleteId(user.id)}
                             >
                               <Trash2 className="h-4 w-4 mr-2" />
                               Delete User
@@ -223,6 +236,33 @@ const UserManagement = () => {
         </CardContent>
       </Card>
     </div>
+
+    {/* Delete confirmation — replaces native confirm() */}
+    <AlertDialog
+      open={pendingDeleteId !== null}
+      onOpenChange={(open) => { if (!open) setPendingDeleteId(null) }}
+    >
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Delete User</AlertDialogTitle>
+          <AlertDialogDescription>
+            {MESSAGES.CONFIRMATIONS.DELETE_USER} This action cannot be undone.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            onClick={() => {
+              if (pendingDeleteId !== null) handleUserAction(pendingDeleteId, "delete")
+              setPendingDeleteId(null)
+            }}
+          >
+            Delete
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   )
 }
 export default UserManagement

@@ -4,9 +4,15 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { StatusBadge } from "@/components/ui/status-badge"
+import { Skeleton } from "@/components/ui/skeleton"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel,
+  AlertDialogContent, AlertDialogDescription, AlertDialogFooter,
+  AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { Search, Download, Eye, RefreshCw, MoreHorizontal } from "lucide-react"
 import { toast } from "sonner"
 import { apiClient, type Transaction } from "@/lib/api"
@@ -22,6 +28,7 @@ const PaymentManagement = () => {
   const [currentPage, setCurrentPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
   const [refreshKey, setRefreshKey] = useState(0)
+  const [pendingRefundId, setPendingRefundId] = useState<string | null>(null)
 
   const fetchTransactions = useCallback(async () => {
     setLoading(true)
@@ -113,8 +120,19 @@ const PaymentManagement = () => {
         </CardHeader>
         <CardContent>
           {loading ? (
-            <div className="flex items-center justify-center py-8">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+            <div className="space-y-3 py-2">
+              {[...Array(5)].map((_, i) => (
+                <div key={i} className="flex gap-4">
+                  <Skeleton className="h-5 w-28 rounded" />
+                  <Skeleton className="h-5 w-24 rounded" />
+                  <Skeleton className="h-5 w-24 rounded" />
+                  <Skeleton className="h-5 w-20 rounded" />
+                  <Skeleton className="h-5 w-16 rounded" />
+                  <Skeleton className="h-5 w-28 rounded" />
+                  <Skeleton className="h-5 w-32 rounded" />
+                  <Skeleton className="h-5 w-8 rounded" />
+                </div>
+              ))}
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -156,11 +174,7 @@ const PaymentManagement = () => {
                             {transaction.status === "completed" && (
                               <>
                                 <DropdownMenuItem
-                                  onClick={() => {
-                                    if (confirm(MESSAGES.CONFIRMATIONS.REFUND_TRANSACTION)) {
-                                      handleRefund(transaction.id)
-                                    }
-                                  }}
+                                  onClick={() => setPendingRefundId(transaction.id)}
                                 >
                                   <RefreshCw className="h-4 w-4 mr-2" />
                                   Process Refund
@@ -193,6 +207,32 @@ const PaymentManagement = () => {
         </CardContent>
       </Card>
     </div>
+
+    {/* Refund confirmation — replaces native confirm() */}
+    <AlertDialog
+      open={pendingRefundId !== null}
+      onOpenChange={(open) => { if (!open) setPendingRefundId(null) }}
+    >
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Process Refund</AlertDialogTitle>
+          <AlertDialogDescription>
+            {MESSAGES.CONFIRMATIONS.REFUND_TRANSACTION}
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            onClick={() => {
+              if (pendingRefundId !== null) handleRefund(pendingRefundId)
+              setPendingRefundId(null)
+            }}
+          >
+            Confirm Refund
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   )
 }
 export default PaymentManagement;

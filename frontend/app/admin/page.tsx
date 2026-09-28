@@ -1,32 +1,62 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, lazy, Suspense } from "react"
 import { Activity, Users, CreditCard, Settings, BarChart3, PieChart, Ticket } from "lucide-react"
-import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Skeleton } from "@/components/ui/skeleton"
 import { apiClient, type SystemStats, wsClient } from "@/lib/api"
 import { useDynamicTitle } from "@/hooks/use-dynamic-title"
 import AdminHeader from "@/components/admin/AdminHeader"
 import { useAuth } from "@/hooks/use-auth"
-import UserManagement from "@/components/admin/UserManagement"
-import PaymentManagement from "@/components/admin/PaymentManagement"
-import SystemSettings from "@/components/admin/SystemSettings"
-import VoucherManagement from "@/components/admin/VoucherManagement"
 import { toast } from "sonner"
-import { motion } from "framer-motion"
 import { formatCurrency } from "@/lib/utils"
 
-// Note: Kept your custom imports that hold complex logic
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+/** Shape returned by apiClient.getHealthStatus() */
+interface ServiceHealth {
+  status: "good" | "warning" | "error" | "unknown"
+  responseTime?: string
+}
+
+interface HealthStatus {
+  api: ServiceHealth
+  database: ServiceHealth
+  mpesa: ServiceHealth
+  ssl: ServiceHealth
+}
+
+// ─── Lazy-loaded tab panels ───────────────────────────────────────────────────
+// Each heavy component is code-split so its JS bundle is only downloaded the
+// first time the user opens that tab. Suspense provides a lightweight fallback.
+
+const UserManagement    = lazy(() => import("@/components/admin/UserManagement"))
+const PaymentManagement = lazy(() => import("@/components/admin/PaymentManagement"))
+const SystemSettings    = lazy(() => import("@/components/admin/SystemSettings"))
+const VoucherManagement = lazy(() => import("@/components/admin/VoucherManagement"))
+
+// Shared skeleton fallback for lazy panels
+function TabPanelSkeleton() {
+  return (
+    <div className="space-y-4 pt-2">
+      <Skeleton className="h-10 w-full rounded-xl" />
+      <Skeleton className="h-64 w-full rounded-xl" />
+      <Skeleton className="h-12 w-48 rounded-xl" />
+    </div>
+  )
+}
+
+// Note: Kept ActivityFeed import — holds complex realtime logic
 import { RealtimeActivityFeed } from "@/components/AdminDashboardComponents"
 
 export default function AdminDashboard() {
   useDynamicTitle("Admin Dashboard - Qonnect")
-  const [activeTab, setActiveTab] = useState("overview")
-  const [stats, setStats] = useState<SystemStats | null>(null)
-  const [healthStatus, setHealthStatus] = useState<any>(null)
-  const [activityLog, setActivityLog] = useState<Array<any>>([])
-  const [isLoading, setIsLoading] = useState(true)
+  const [activeTab, setActiveTab]       = useState("overview")
+  const [stats, setStats]               = useState<SystemStats | null>(null)
+  const [healthStatus, setHealthStatus] = useState<HealthStatus | null>(null)
+  const [activityLog, setActivityLog]   = useState<Parameters<typeof RealtimeActivityFeed>[0]["activities"]>([])
+  const [isLoading, setIsLoading]       = useState(true)
   const { isAuthenticated } = useAuth()
 
   // Track which tabs have been visited so each panel mounts only once.
@@ -52,22 +82,26 @@ export default function AdminDashboard() {
     const handleUserConnected = (event: CustomEvent) => {
       toast.success(`${event.detail.phone} is now online`)
       addActivityLog({
-        id: Date.now(),
-        type: "user_connected",
+        id: String(Date.now()),
+        type: "connection",
         title: "User Connected",
         description: `${event.detail.phone} is now online`,
         timestamp: new Date().toLocaleTimeString(),
+        icon: null,
+        status: "success",
       })
       fetchStats()
     }
 
     const handleUserDisconnected = (event: CustomEvent) => {
       addActivityLog({
-        id: Date.now(),
-        type: "user_disconnected",
+        id: String(Date.now()),
+        type: "connection",
         title: "User Disconnected",
         description: `${event.detail.phone} went offline`,
         timestamp: new Date().toLocaleTimeString(),
+        icon: null,
+        status: "pending",
       })
       fetchStats()
     }
@@ -75,10 +109,10 @@ export default function AdminDashboard() {
     window.addEventListener("user_connected", handleUserConnected as EventListener)
     window.addEventListener("user_disconnected", handleUserDisconnected as EventListener)
 
-    // Refresh health status every 30 seconds
+    // Refresh health status every 60 seconds (4 parallel calls — no need to hammer)
     const healthInterval = setInterval(() => {
       fetchHealthStatus()
-    }, 30000)
+    }, 60000)
 
     return () => {
       wsClient.disconnect()
@@ -104,23 +138,28 @@ export default function AdminDashboard() {
     try {
       const response = await apiClient.getHealthStatus()
       if (response.success) {
-        setHealthStatus(response.data)
+        setHealthStatus(response.data as HealthStatus)
+      } else {
+        // Non-throwing API failure — log so devs can see it in the console
+        console.warn("[AdminDashboard] Health check returned failure:", response.error)
+        setHealthStatus(null)
       }
-    } catch {
+    } catch (error) {
+      console.warn("[AdminDashboard] Health check threw an exception:", error)
       setHealthStatus(null)
     }
   }
 
-  const addActivityLog = (activity: any) => {
+  const addActivityLog = (activity: Parameters<typeof RealtimeActivityFeed>[0]["activities"][number]) => {
     setActivityLog((prev) => [activity, ...prev.slice(0, 9)])
   }
 
   // Helper for the clean stat cards
   const metrics = [
     { label: "Today's Revenue", value: formatCurrency(stats?.todayRevenue || 0), icon: BarChart3 },
-    { label: "Active Users", value: stats?.activeUsers || 0, icon: Users },
-    { label: "Pending Payments", value: stats?.pendingPayments || 0, icon: CreditCard },
-    { label: "Success Rate", value: `${stats?.successRate || 100}%`, icon: PieChart },
+    { label: "Active Users",    value: stats?.activeUsers    || 0,               icon: Users },
+    { label: "Pending Payments",value: stats?.pendingPayments || 0,              icon: CreditCard },
+    { label: "Success Rate",    value: `${stats?.successRate || 100}%`,          icon: PieChart },
   ]
 
   return (
@@ -180,7 +219,9 @@ export default function AdminDashboard() {
                       <Icon className="w-4 h-4 text-primary/60" />
                     </div>
                     <div className="text-2xl font-bold text-foreground">
-                      {isLoading ? "..." : metric.value}
+                      {isLoading
+                        ? <Skeleton className="h-8 w-24 rounded-md" />
+                        : metric.value}
                     </div>
                   </div>
                 )
@@ -200,7 +241,6 @@ export default function AdminDashboard() {
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
-                    {/* Assuming this component renders a simple list. If it has heavy styles inside, it may need refining too! */}
                     <RealtimeActivityFeed activities={activityLog} />
                   </CardContent>
                 </Card>
@@ -237,9 +277,9 @@ export default function AdminDashboard() {
                         },
                       ] : [
                         { label: "API Response", value: "Loading…", status: "warning" },
-                        { label: "Database", value: "Loading…", status: "warning" },
-                        { label: "M-Pesa API", value: "Loading…", status: "warning" },
-                        { label: "SSL Status", value: "Loading…", status: "warning" },
+                        { label: "Database",     value: "Loading…", status: "warning" },
+                        { label: "M-Pesa API",   value: "Loading…", status: "warning" },
+                        { label: "SSL Status",   value: "Loading…", status: "warning" },
                       ]).map((item, i) => (
                         <div key={i} className="flex items-center justify-between py-3">
                           <span className="text-sm text-muted-foreground">{item.label}</span>
@@ -257,20 +297,37 @@ export default function AdminDashboard() {
             </div>
           </TabsContent>
 
-          {/* OTHER TABS — each panel mounts only when its tab is first opened.
-              Once mounted it stays mounted (hidden by TabsContent) so data is
-              not re-fetched when the user switches back to a tab they've already visited. */}
+          {/* OTHER TABS — each panel mounts only when its tab is first visited.
+              React.lazy + Suspense means the JS bundle for each panel is only
+              downloaded on first open; after that it stays mounted (hidden by
+              TabsContent) so data is not re-fetched on tab switch. */}
           <TabsContent value="payments" className="outline-none">
-            {visitedTabs.current.has("payments") && <PaymentManagement />}
+            {visitedTabs.current.has("payments") && (
+              <Suspense fallback={<TabPanelSkeleton />}>
+                <PaymentManagement />
+              </Suspense>
+            )}
           </TabsContent>
           <TabsContent value="vouchers" className="outline-none">
-            {visitedTabs.current.has("vouchers") && <VoucherManagement />}
+            {visitedTabs.current.has("vouchers") && (
+              <Suspense fallback={<TabPanelSkeleton />}>
+                <VoucherManagement />
+              </Suspense>
+            )}
           </TabsContent>
           <TabsContent value="users" className="outline-none">
-            {visitedTabs.current.has("users") && <UserManagement />}
+            {visitedTabs.current.has("users") && (
+              <Suspense fallback={<TabPanelSkeleton />}>
+                <UserManagement />
+              </Suspense>
+            )}
           </TabsContent>
           <TabsContent value="settings" className="outline-none">
-            {visitedTabs.current.has("settings") && <SystemSettings />}
+            {visitedTabs.current.has("settings") && (
+              <Suspense fallback={<TabPanelSkeleton />}>
+                <SystemSettings />
+              </Suspense>
+            )}
           </TabsContent>
         </Tabs>
       </main>
