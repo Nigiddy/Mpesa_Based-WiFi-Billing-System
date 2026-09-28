@@ -8,6 +8,7 @@ import Link from "next/link"
 import { Logo } from "./ui/logo"
 import { motion, AnimatePresence } from "framer-motion"
 import { cn } from "@/lib/utils"
+import { PROJECT_NAME } from "@/lib/constants"
 
 export function Header() {
   const [isMenuOpen, setIsMenuOpen] = useState(false)
@@ -23,7 +24,7 @@ export function Header() {
     const handleScroll = () => {
       setScrolled(window.scrollY > 20)
     }
-    window.addEventListener("scroll", handleScroll)
+    window.addEventListener("scroll", handleScroll, { passive: true })
     return () => window.removeEventListener("scroll", handleScroll)
   }, [])
 
@@ -64,7 +65,7 @@ export function Header() {
                 <div className="absolute inset-0 rounded-full bg-primary/20 animate-ping opacity-0 group-hover:opacity-100" />
               </div>
               <span className="text-xl font-bold bg-gradient-to-r from-foreground to-foreground/80 bg-clip-text text-transparent group-hover:from-primary group-hover:to-blue-600 transition-all duration-300">
-                Qonnect
+                {PROJECT_NAME}
               </span>
             </Link>
           </motion.div>
