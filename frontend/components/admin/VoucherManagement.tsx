@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useMemo } from "react"
 import { Ticket, Plus, Download, RefreshCw, Copy, Check, Filter } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -57,13 +57,15 @@ export default function VoucherManagement() {
     return () => { cancelled = true }
   }, [fetchVouchers])
 
-  // Summary counts
-  const counts = {
+  // Summary counts — memoised so the four filter passes only rerun when
+  // vouchers changes. Note: these reflect the current page only; for accurate
+  // totals across all pages a dedicated backend aggregate endpoint is needed.
+  const counts = useMemo(() => ({
     unused:     vouchers.filter((v) => v.status === "unused").length,
     active:     vouchers.filter((v) => v.status === "active").length,
     fully_used: vouchers.filter((v) => v.status === "fully_used").length,
     expired:    vouchers.filter((v) => v.status === "expired").length,
-  }
+  }), [vouchers])
 
   const FILTERS: { value: VoucherStatus; label: string }[] = [
     { value: "all",        label: "All" },

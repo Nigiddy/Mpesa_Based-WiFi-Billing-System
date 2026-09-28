@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect } from "react"
 import { toast } from "sonner"
 import { apiClient, SystemSettings } from "@/lib/api"
 import { MESSAGES } from "@/lib/constants/messages"
@@ -10,35 +10,36 @@ export const useSystemSettings = () => {
     const [loading, setLoading] = useState(true)
     const [saving, setSaving] = useState(false)
 
-    const fetchSettings = useCallback(async () => {
-        try {
-            setLoading(true)
-            const response = await apiClient.getSystemSettings()
-            if (response.success && response.data) {
-                setSettings(response.data)
-            } else {
-                throw new Error(response.error || MESSAGES.ERRORS.FETCH_SETTINGS)
-            }
-        } catch {
-            toast.error(MESSAGES.ERRORS.FETCH_SETTINGS, {
-                description: "Please try refreshing the page",
-            })
-        } finally {
-            setLoading(false)
-        }
-    }, [])
-
     useEffect(() => {
         let cancelled = false
-        fetchSettings().catch(() => {
-            if (!cancelled) toast.error(MESSAGES.ERRORS.FETCH_SETTINGS)
-        })
+        const fetchSettings = async () => {
+            try {
+                setLoading(true)
+                const response = await apiClient.getSystemSettings()
+                if (!cancelled) {
+                    if (response.success && response.data) {
+                        setSettings(response.data)
+                    } else {
+                        throw new Error(response.error || MESSAGES.ERRORS.FETCH_SETTINGS)
+                    }
+                }
+            } catch {
+                if (!cancelled) {
+                    toast.error(MESSAGES.ERRORS.FETCH_SETTINGS, {
+                        description: "Please try refreshing the page",
+                    })
+                }
+            } finally {
+                if (!cancelled) setLoading(false)
+            }
+        }
+        fetchSettings()
         return () => { cancelled = true }
-    }, [fetchSettings])
-
-    const updateSetting = useCallback((key: keyof SystemSettings, value: any) => {
-        setSettings((prev) => (prev ? { ...prev, [key]: value } : null))
     }, [])
+
+    const updateSetting = (key: keyof SystemSettings, value: any) => {
+        setSettings((prev) => (prev ? { ...prev, [key]: value } : null))
+    }
 
     const saveSettings = async () => {
         if (!settings) return
