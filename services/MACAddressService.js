@@ -220,129 +220,141 @@ async function registerOrExtendMACSession(params, prismaClient = prisma) {
       lockKey
     );
 
-    // Re-check inside the lock in case another request created a session
-    // between our initial findFirst and acquiring the lock.
-    const sessionAfterLock = await prismaClient.session.findFirst({
-      where: {
-        macAddress: normalizedMAC,
-        disconnectedAt: null,
-        expiryTime: { gt: new Date() },
-      },
-    });
-
-    if (sessionAfterLock) {
-      // Another concurrent request already created a session — extend it instead.
-      const newExpiryTime = new Date(sessionAfterLock.expiryTime.getTime() + expiryDuration);
-      const updatedSession = await prismaClient.session.update({
-        where: { id: sessionAfterLock.id },
-        data: { expiryTime: newExpiryTime, paymentId },
+    // HIGH-5 FIX: GET_LOCK() is connection-scoped, NOT transaction-scoped.
+    // Prisma connection pools reuse connections. If this code throws after
+    // GET_LOCK but before the connection is returned, the lock stays held by
+    // whatever connection eventually gets recycled. The finally block ensures
+    // RELEASE_LOCK() is always called, even on error or early return.
+    try {
+      // Re-check inside the lock in case another request created a session
+      // between our initial findFirst and acquiring the lock.
+      const sessionAfterLock = await prismaClient.session.findFirst({
+        where: {
+          macAddress: normalizedMAC,
+          disconnectedAt: null,
+          expiryTime: { gt: new Date() },
+        },
       });
-      const jobId = `session-expiry-${sessionAfterLock.id}`;
-      console.log(`✅ Session extended (post-lock) for ${normalizedMAC}. New expiry: ${newExpiryTime.toISOString()}`);
+
+      if (sessionAfterLock) {
+        // Another concurrent request already created a session — extend it instead.
+        const newExpiryTime = new Date(sessionAfterLock.expiryTime.getTime() + expiryDuration);
+        const updatedSession = await prismaClient.session.update({
+          where: { id: sessionAfterLock.id },
+          data: { expiryTime: newExpiryTime, paymentId },
+        });
+        const jobId = `session-expiry-${sessionAfterLock.id}`;
+        console.log(`✅ Session extended (post-lock) for ${normalizedMAC}. New expiry: ${newExpiryTime.toISOString()}`);
+        return {
+          success: true,
+          sessionId: updatedSession.id,
+          expiresAt: newExpiryTime,
+          action: 'extended',
+          queueJob: {
+            action: 'reschedule',
+            jobId,
+            sessionId: sessionAfterLock.id,
+            macAddress: normalizedMAC,
+            delay: newExpiryTime.getTime() - Date.now(),
+          },
+        };
+      }
+
+      // BUG FIX (C-8): The original upsert was a unique-constraint trap.
+      // User.macAddress is @unique. Three edge-cases must be handled:
+      //
+      //  a) Returning user, same device → update lastSeen + MAC (idempotent)
+      //  b) Returning user, new device  → update lastSeen + MAC (device changed)
+      //  c) New phone, MAC already linked to a different user → REFUSE and audit
+      //     (H-2 fix: do NOT silently overwrite the existing user's phone number)
+      //
+      // We use a findFirst + update/create pattern inside the existing transaction
+      // (prismaClient here is already `tx` when called from within $transaction).
+
+      let user = await prismaClient.user.findUnique({ where: { phone } });
+
+      if (user) {
+        // Case a/b: Known phone — update MAC + lastSeen
+        user = await prismaClient.user.update({
+          where: { id: user.id },
+          data: { macAddress: normalizedMAC, lastSeen: new Date(), status: 'ACTIVE' },
+        });
+      } else {
+        // Check if the MAC is already registered to a different account
+        const macOwner = await prismaClient.user.findUnique({ where: { macAddress: normalizedMAC } });
+        if (macOwner) {
+          // Case c (H-2): MAC is owned by a DIFFERENT phone number.
+          // Silently overwriting macOwner.phone is dangerous — this could be a
+          // spoofing attempt or a mis-keyed phone number.  Refuse the operation,
+          // record a SUSPICIOUS_MAC_REASSIGNMENT audit event, and let the caller
+          // decide how to handle it (e.g. prompt the user to contact support).
+          console.warn(
+            `⚠️  SUSPICIOUS: MAC ${normalizedMAC} is owned by phone ${macOwner.phone} ` +
+            `but a session was requested for phone ${phone}. Refusing reassignment.`
+          );
+          await prismaClient.auditlog.create({
+            data: {
+              action: 'SUSPICIOUS_MAC_REASSIGNMENT',
+              userId: macOwner.id,
+              details: JSON.stringify({
+                mac: normalizedMAC,
+                existingPhone: macOwner.phone,
+                requestedPhone: phone,
+                paymentId,
+                ip,
+              }),
+              ip,
+            },
+          });
+          return {
+            success: false,
+            error: 'MAC address is registered to a different account. Please contact support.',
+            code: 'MAC_OWNERSHIP_CONFLICT',
+          };
+        } else {
+          // Brand new user on a new device
+          user = await prismaClient.user.create({
+            data: { phone, macAddress: normalizedMAC, status: 'ACTIVE' },
+          });
+        }
+      }
+
+      const newExpiryTime = new Date(Date.now() + expiryDuration);
+      const newSession = await prismaClient.session.create({
+        data: {
+          userId: user.id,
+          macAddress: normalizedMAC,
+          ipAddress: ip,
+          expiryTime: newExpiryTime,
+          startTime: new Date(),
+          paymentId,
+        },
+      });
+
+      const jobId = `session-expiry-${newSession.id}`;
+      const delay = newExpiryTime.getTime() - Date.now();
+
+      console.log(`✅ New session registered for ${normalizedMAC}. Expires: ${newExpiryTime.toISOString()}`);
       return {
         success: true,
-        sessionId: updatedSession.id,
-        expiresAt: newExpiryTime,
-        action: 'extended',
-        queueJob: {
-          action: 'reschedule',
-          jobId,
-          sessionId: sessionAfterLock.id,
-          macAddress: normalizedMAC,
-          delay: newExpiryTime.getTime() - Date.now(),
-        },
-      };
-    }
-
-    // BUG FIX (C-8): The original upsert was a unique-constraint trap.
-    // User.macAddress is @unique. Three edge-cases must be handled:
-    //
-    //  a) Returning user, same device → update lastSeen + MAC (idempotent)
-    //  b) Returning user, new device  → update lastSeen + MAC (device changed)
-    //  c) New phone, MAC already linked to a different user → REFUSE and audit
-    //     (H-2 fix: do NOT silently overwrite the existing user's phone number)
-    //
-    // We use a findFirst + update/create pattern inside the existing transaction
-    // (prismaClient here is already `tx` when called from within $transaction).
-
-    let user = await prismaClient.user.findUnique({ where: { phone } });
-
-    if (user) {
-      // Case a/b: Known phone — update MAC + lastSeen
-      user = await prismaClient.user.update({
-        where: { id: user.id },
-        data: { macAddress: normalizedMAC, lastSeen: new Date(), status: 'ACTIVE' },
-      });
-    } else {
-      // Check if the MAC is already registered to a different account
-      const macOwner = await prismaClient.user.findUnique({ where: { macAddress: normalizedMAC } });
-      if (macOwner) {
-        // Case c (H-2): MAC is owned by a DIFFERENT phone number.
-        // Silently overwriting macOwner.phone is dangerous — this could be a
-        // spoofing attempt or a mis-keyed phone number.  Refuse the operation,
-        // record a SUSPICIOUS_MAC_REASSIGNMENT audit event, and let the caller
-        // decide how to handle it (e.g. prompt the user to contact support).
-        console.warn(
-          `⚠️  SUSPICIOUS: MAC ${normalizedMAC} is owned by phone ${macOwner.phone} ` +
-          `but a session was requested for phone ${phone}. Refusing reassignment.`
-        );
-        await prismaClient.auditlog.create({
-          data: {
-            action: 'SUSPICIOUS_MAC_REASSIGNMENT',
-            userId: macOwner.id,
-            details: JSON.stringify({
-              mac: normalizedMAC,
-              existingPhone: macOwner.phone,
-              requestedPhone: phone,
-              paymentId,
-              ip,
-            }),
-            ip,
-          },
-        });
-        return {
-          success: false,
-          error: 'MAC address is registered to a different account. Please contact support.',
-          code: 'MAC_OWNERSHIP_CONFLICT',
-        };
-      } else {
-        // Brand new user on a new device
-        user = await prismaClient.user.create({
-          data: { phone, macAddress: normalizedMAC, status: 'ACTIVE' },
-        });
-      }
-    }
-
-    const newExpiryTime = new Date(Date.now() + expiryDuration);
-    const newSession = await prismaClient.session.create({
-      data: {
-        userId: user.id,
-        macAddress: normalizedMAC,
-        ipAddress: ip,
-        expiryTime: newExpiryTime,
-        startTime: new Date(),
-        paymentId,
-      },
-    });
-
-    const jobId = `session-expiry-${newSession.id}`;
-    const delay = newExpiryTime.getTime() - Date.now();
-
-    console.log(`✅ New session registered for ${normalizedMAC}. Expires: ${newExpiryTime.toISOString()}`);
-    return {
-      success: true,
-      sessionId: newSession.id,
-      expiresAt: newExpiryTime,
-      action: 'created',
-      // Caller MUST enqueue this job after the transaction commits
-      queueJob: delay > 0 ? {
-        action: 'create',
-        jobId,
         sessionId: newSession.id,
-        macAddress: normalizedMAC,
-        delay,
-      } : null,
-    };
+        expiresAt: newExpiryTime,
+        action: 'created',
+        // Caller MUST enqueue this job after the transaction commits
+        queueJob: delay > 0 ? {
+          action: 'create',
+          jobId,
+          sessionId: newSession.id,
+          macAddress: normalizedMAC,
+          delay,
+        } : null,
+      };
+    } finally {
+      // HIGH-5 FIX: Always release the advisory lock, even if an error was thrown.
+      // Silently swallow any error from RELEASE_LOCK itself to avoid masking the
+      // original exception.
+      await prismaClient.$queryRawUnsafe(`SELECT RELEASE_LOCK(?)`, lockKey).catch(() => {});
+    }
   }
 }
 
