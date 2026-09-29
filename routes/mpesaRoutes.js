@@ -141,7 +141,7 @@ router.post(
             macAddress: mac,
             status: PaymentStatus.PENDING,
             ipAddress: req.ip,
-            mpesaRef: mpesaResponse.CheckoutRequestID, // Save the reference immediately
+            mpesa_reference: mpesaResponse.CheckoutRequestID, // Save the reference immediately
             // L-7: Store the selected plan key so the callback never needs to
             // re-derive the package from the amount (breaks if prices change).
             planKey: pkg,
@@ -168,7 +168,7 @@ router.post(
           success: true,
           data: {
             transactionId,
-            mpesaRef: mpesaResponse.CheckoutRequestID,
+            mpesa_reference: mpesaResponse.CheckoutRequestID,
             status: 'pending', // Keep lowercase for frontend compatibility
             expiresAt: null,
             message: 'Enter PIN on your phone to complete payment'
@@ -177,7 +177,7 @@ router.post(
       } finally {
         // 🔓 Always release the lock — whether success, error, or early return.
         // If DB create succeeded, the lock held just long enough to prevent a duplicate;
-        // the mpesaRef uniqueness constraint is the permanent guard going forward.
+        // the mpesa_reference uniqueness constraint is the permanent guard going forward.
         if (lockAcquired && redis) {
           await redis.del(lockKey).catch((err) =>
             console.error('⚠️ Failed to release payment lock:', err.message)
@@ -204,7 +204,7 @@ router.post(
  * Used for frontend polling (should migrate to WebSocket)
  *
  * SEC-FIX (AUTH-9): This endpoint was previously unauthenticated and returned
- * mpesaRef + amount to anyone who could enumerate a transactionId. The format
+ * mpesa_reference + amount to anyone who could enumerate a transactionId. The format
  * TXN_<epoch>_<4-byte-hex> is guessable by time-range scanning.
  *
  * Fix: Require the caller to supply the phone number used during payment
@@ -242,7 +242,7 @@ router.get("/payments/status/:transactionId", async (req, res) => {
         id: true,
         phone: true,     // fetched for ownership check only — not returned in response
         status: true,
-        mpesaRef: true,
+        mpesa_reference: true,
         expiresAt: true,
         amount: true,
         createdAt: true
@@ -276,7 +276,7 @@ router.get("/payments/status/:transactionId", async (req, res) => {
       success: true,
       data: {
         status: payment.status.toLowerCase(), // Send lowercase to frontend
-        mpesaRef: payment.mpesaRef,
+        mpesaRef: payment.mpesa_reference,
         expiresAt: payment.expiresAt
         // phone is intentionally omitted from the response
       }
@@ -325,7 +325,7 @@ router.get("/payments/:transactionId/details", apiLimiter, async (req, res) => {
         phone: true,
         amount: true,
         status: true,
-        mpesaRef: true,
+        mpesa_reference: true,
         expiresAt: true,
         createdAt: true
       }

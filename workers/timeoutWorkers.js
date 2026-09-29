@@ -50,10 +50,23 @@ const paymentTimeoutWorker = paymentTimeoutQueue ? new Worker('payment-timeout',
 
     // If payment is still pending, mark it as expired.
     if (payment && payment.status === PaymentStatus.PENDING) {
-      await prisma.payment.update({
-        where: { id: payment.id },
-        data: { status: PaymentStatus.EXPIRED, failedAt: new Date() },
-      });
+      // CRIT-3 FIX: Write PaymentStatusUpdate audit row atomically alongside the
+      // status change. Previously only payment.status was updated, leaving EXPIRED
+      // payments with no audit trail entry — unlike every other status transition.
+      await prisma.$transaction([
+        prisma.payment.update({
+          where: { id: payment.id },
+          data: { status: PaymentStatus.EXPIRED, failedAt: new Date() },
+        }),
+        prisma.paymentStatusUpdate.create({
+          data: {
+            paymentId: payment.id,
+            oldStatus: payment.status,
+            newStatus: PaymentStatus.EXPIRED,
+            reason: 'payment_timeout_auto',
+          },
+        }),
+      ]);
       console.log(`  ✅ Transaction ${transactionId} marked as EXPIRED.`);
       logAudit('PAYMENT_TIMEOUT_AUTO', { transactionId });
     }

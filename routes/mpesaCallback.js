@@ -87,8 +87,17 @@ router.post(
           logAudit('callback_enqueue_failed', { checkoutId, error: error.message });
         }
       } else {
-        console.log(`⚠️  Redis unavailable - payment will be processed without queue: ${checkoutId}`);
-        logAudit('callback_queued_skipped', { checkoutId, reason: 'Redis unavailable' });
+        // CRIT-2 FIX: Redis/queue unavailable — process the payment INLINE rather
+        // than silently dropping it. Uses the same processPaymentJob() logic as the
+        // BullMQ worker so the behaviour is identical. Safaricom already received
+        // a 200 above, so this runs fire-and-forget to avoid blocking the request.
+        console.warn(`⚠️  Redis unavailable — processing payment inline: ${checkoutId}`);
+        logAudit('callback_inline_processing', { checkoutId, reason: 'Redis unavailable' });
+        processPaymentJob({ checkoutId, callbackData, callbackSecurity: req.callbackSecurity })
+          .catch((err) => {
+            console.error(`❌ Inline payment processing failed for ${checkoutId}:`, err.message);
+            logAudit('callback_inline_processing_failed', { checkoutId, error: err.message });
+          });
       }
     } catch (error) {
       console.error('❌ Callback handler error:', error);
@@ -130,6 +139,296 @@ async function updatePaymentStatusWithAudit(client, paymentId, oldStatus, newSta
   ]);
 }
 
+
+/**
+ * Core payment processing logic — shared by both the BullMQ worker and the
+ * synchronous inline fallback (used when Redis is unavailable, CRIT-2 fix).
+ *
+ * @param {{ checkoutId: string, callbackData: object, callbackSecurity: object }} data
+ * @returns {Promise<object>} Processing result
+ */
+async function processPaymentJob({ checkoutId, callbackData, callbackSecurity }) {
+  const { getSessionExpiryQueue } = require('../workers/timeoutWorkers');
+  console.log(`\n🔄 Processing payment: ${checkoutId}`);
+
+  // ✅ STEP 1: Find payment record
+  const payment = await prisma.payment.findUnique({
+    where: { mpesa_reference: checkoutId }
+  });
+
+  if (!payment) {
+    console.error(`❌ Payment not found: ${checkoutId}`);
+    logAudit('payment_not_found', { checkoutId });
+    throw new Error(`Payment record not found for checkout ${checkoutId}`);
+  }
+
+  // ✅ STEP 2: Idempotency - check if already processed
+  if (payment.status === PaymentStatus.COMPLETED || payment.status === PaymentStatus.FAILED) {
+    console.log(`ℹ️ Payment already processed: ${payment.status}`);
+    return { status: 'already_processed', paymentStatus: payment.status };
+  }
+
+  // ✅ STEP 3: Verify callback result code
+  const resultCode = callbackData?.ResultCode;
+
+  if (resultCode !== 0) {
+    console.log(`❌ Payment declined/cancelled: ResultCode=${resultCode}`);
+
+    // Issue 3 Fix: write PaymentStatusUpdate alongside the status change
+    await updatePaymentStatusWithAudit(
+      prisma, payment.id,
+      payment.status, PaymentStatus.FAILED,
+      'callback_received_non_zero_result'
+    );
+
+    sendPaymentStatus(payment.transactionId, {
+      transactionId: payment.transactionId,
+      checkoutId,
+      status: 'failed',
+      resultCode,
+      message: 'Payment declined or cancelled'
+    });
+
+    logAudit('payment_failed', { checkoutId, resultCode });
+    return { status: 'failed', resultCode };
+  }
+
+  // ✅ STEP 4: Extract and verify amount
+  const callbackAmount = Number(
+    callbackData?.CallbackMetadata?.Item?.find(
+      (item) => item?.Name === 'Amount'
+    )?.Value
+  );
+
+  if (!callbackAmount || callbackAmount !== payment.amount) {
+    console.error(
+      `🔴 FRAUD: Amount mismatch. Payment=${payment.amount}, Callback=${callbackAmount}`
+    );
+
+    // Issue 3 Fix: write PaymentStatusUpdate alongside the status change
+    await updatePaymentStatusWithAudit(
+      prisma, payment.id,
+      payment.status, PaymentStatus.FRAUD_DETECTED,
+      'fraud_detected_amount_mismatch'
+    );
+
+    sendPaymentStatus(payment.transactionId, {
+      transactionId: payment.transactionId,
+      checkoutId,
+      status: 'failed',
+      error: 'Fraud detected: amount mismatch'
+    });
+
+    logAudit('fraud_detected_amount_mismatch', {
+      checkoutId,
+      expectedAmount: payment.amount,
+      callbackAmount,
+      phone: payment.phone
+    });
+
+    // Alert admin
+    console.error('🚨 SECURITY ALERT: Potential fraud attempt');
+
+    return { status: 'fraud_detected' };
+  }
+
+  // ✅ STEP 5: Verify with M-Pesa API
+  console.log(`🔍 Verifying payment with M-Pesa API...`);
+
+  const apiVerification = await verifyPaymentWithMpesa(checkoutId);
+
+  if (!apiVerification.verified) {
+    console.error(`❌ M-Pesa API verification failed:`, apiVerification.error);
+
+    // Issue 3 Fix: write PaymentStatusUpdate alongside the status change
+    await updatePaymentStatusWithAudit(
+      prisma, payment.id,
+      payment.status, PaymentStatus.VERIFICATION_FAILED,
+      'mpesa_api_verification_failed'
+    );
+
+    logAudit('payment_verification_failed', {
+      checkoutId,
+      error: apiVerification.error
+    });
+
+    // This is critical - payment may have failed at M-Pesa
+    throw new Error(`M-Pesa API verification failed: ${apiVerification.error}`);
+  }
+
+  // ✅ STEP 6: Atomically create session and update payment
+  const { getPackageByAmount } = require('../lib/packages');
+  const pkg = getPackageByAmount(payment.amount);
+
+  if (!pkg) {
+    console.error(`❌ Invalid package amount: ${payment.amount}`);
+    throw new Error(`Unknown package amount: ${payment.amount}`);
+  }
+  const { duration: expiryDuration, timeLabel } = pkg;
+
+  const { registerOrExtendMACSession } = require('../services/MACAddressService');
+  const mpesaReceipt = callbackData?.CallbackMetadata?.Item?.find(
+    (item) => item?.Name === 'MpesaReceiptNumber'
+  )?.Value;
+
+  let sessionResult;
+  try {
+    console.log('Beginning database transaction...');
+    sessionResult = await prisma.$transaction(async (tx) => {
+      const sessionDetails = await registerOrExtendMACSession(
+        {
+          mac: payment.macAddress,
+          phone: payment.phone,
+          ip: payment.ipAddress,
+          expiryDuration,
+          paymentId: payment.id,
+        },
+        tx // Pass the transaction client to the service
+      );
+
+      if (!sessionDetails.success) {
+        // This will cause the transaction to roll back
+        throw new Error(`Failed to register/extend session: ${sessionDetails.error}`);
+      }
+
+      // Mark payment as completed within the same transaction.
+      // BUG FIX (C-7):
+      //   mpesa_reference was created with CheckoutRequestID — do NOT overwrite it.
+      //   mpesa_receipt_number is the Safaricom receipt number (e.g. QGH12345678).
+      //   completedAt was also never being set — fix that here too.
+      await tx.payment.update({
+        where: { id: payment.id },
+        data: {
+          status: PaymentStatus.COMPLETED,
+          mpesa_receipt_number: mpesaReceipt || null,  // Safaricom receipt → correct field
+          completedAt: new Date(),              // Record actual completion timestamp
+          expiresAt: sessionDetails.expiresAt,
+        },
+      });
+
+      // Issue 3 Fix: write PaymentStatusUpdate INSIDE the same transaction
+      // so status change + audit row are always atomically consistent.
+      await tx.paymentStatusUpdate.create({
+        data: {
+          paymentId: payment.id,
+          oldStatus: payment.status,
+          newStatus: PaymentStatus.COMPLETED,
+          reason: 'callback_received_successful',
+        },
+      });
+
+      console.log('✅ DB Transaction: Payment marked as completed and session created/extended.');
+      return sessionDetails;
+    });
+
+    // Issue 2 Fix: enqueue BullMQ session expiry job AFTER the transaction commits.
+    // Enqueueing inside the $transaction is a bug — if TX rolls back, the job fires
+    // for a session row that was never actually committed.
+    const sessionExpiryQueue = getSessionExpiryQueue();
+    if (sessionExpiryQueue && sessionResult.queueJob) {
+      const { action, jobId, sessionId, macAddress, delay } = sessionResult.queueJob;
+      if (action === 'reschedule') {
+        // Remove stale job first, then re-add
+        await sessionExpiryQueue.remove(jobId).catch(() => {});
+      }
+      await sessionExpiryQueue.add(
+        'expire-session',
+        { sessionId, macAddress },
+        {
+          delay,
+          jobId,
+          removeOnComplete: true,
+        }
+      );
+      console.log(`[Expiry Job] ${action === 'reschedule' ? 'Rescheduled' : 'Scheduled'} for session ${sessionId}`);
+    }
+
+    logAudit('payment_db_transaction_success', {
+      checkoutId,
+      phone: payment.phone,
+      amount: payment.amount,
+      mpesaReceipt,
+      sessionAction: sessionResult.action,
+    });
+
+  } catch (transactionError) {
+    console.error(`❌ Database transaction failed: ${transactionError.message}`);
+    logAudit('payment_db_transaction_failed', { checkoutId, error: transactionError.message });
+    // Re-throw to let caller handle the retry
+    throw transactionError;
+  }
+
+  // ✅ STEP 7: Whitelist MAC address (External service call, outside of DB transaction)
+  console.log(`🔓 Whitelisting MAC on router: ${payment.macAddress}`);
+  const { whitelistMAC } = require('../config/mikrotik');
+  const mikrotikResult = await whitelistMAC(payment.macAddress, timeLabel, pkg);
+
+  if (!mikrotikResult.success) {
+    // The core payment is already committed. We just flag that this part failed.
+    console.error(`⚠️ MAC whitelist failed after successful payment: ${mikrotikResult.message}`);
+
+    // Issue 3 Fix: wrap in transaction so audit row is written atomically
+    await updatePaymentStatusWithAudit(
+      prisma, payment.id,
+      PaymentStatus.COMPLETED, PaymentStatus.COMPLETED_BUT_MAC_FAILED,
+      'mac_whitelist_failed_post_payment'
+    );
+
+    logAudit('payment_mac_whitelist_failed', {
+      checkoutId,
+      mac: payment.macAddress,
+      error: mikrotikResult.message
+    });
+
+    // Enqueue a job to retry the whitelisting
+    const { getMacWhitelistRetryQueue } = require('../workers/timeoutWorkers');
+    const retryQueue = getMacWhitelistRetryQueue();
+    if (retryQueue) {
+      await retryQueue.add('retry-mac-whitelist', {
+        paymentId: payment.id,
+        timeLabel: timeLabel
+      }, {
+        attempts: 5, // Retry up to 5 times
+        backoff: {
+          type: 'exponential',
+          delay: 60000 // Start with a 1-minute delay
+        },
+        removeOnComplete: true,
+        jobId: `mac-retry-${payment.id}`
+      });
+      console.log(`🔁 Enqueued MAC whitelist retry job for payment ${payment.id}`);
+    }
+
+    // Alert admin - manual intervention needed if retries fail
+    console.error('🚨 ALERT: MAC whitelisting failed. Automatic retry scheduled.');
+
+    return {
+      status: 'completed_but_mac_failed',
+      message: mikrotikResult.message
+    };
+  }
+
+  console.log(`✅ MAC whitelisted successfully`);
+  logAudit('payment_mac_whitelist_success', { checkoutId, mac: payment.macAddress });
+
+  sendPaymentStatus(payment.transactionId, {
+    transactionId: payment.transactionId,
+    checkoutId,
+    status: 'completed',
+    phone: payment.phone,
+    amount: payment.amount,
+    expiresAt: sessionResult.expiresAt,
+    macAddress: payment.macAddress
+  });
+
+  return {
+    status: 'success',
+    checkoutId,
+    phone: payment.phone,
+    expiresAt: sessionResult.expiresAt
+  };
+}
+
 /**
  * Background job processor for secure payment processing
  * Uses BullMQ worker pattern
@@ -150,297 +449,17 @@ async function setupPaymentWorker() {
 
   const paymentWorker = new Worker(
     'mpesa-payments',
+    // CRIT-2 FIX: Delegate to the shared processPaymentJob() function.
+    // This ensures the BullMQ worker and the inline Redis-unavailable fallback
+    // execute identical logic — no duplication, no divergence risk.
     async (job) => {
-      const { checkoutId, callbackData, callbackSecurity } = job.data;
-
-      console.log(`\n🔄 Processing payment: ${checkoutId}`);
-
+      const { checkoutId } = job.data;
       try {
-        // ✅ STEP 1: Find payment record
-        const payment = await prisma.payment.findUnique({
-          where: { mpesaRef: checkoutId }
-        });
-
-        if (!payment) {
-          console.error(`❌ Payment not found: ${checkoutId}`);
-          logAudit('payment_not_found', { checkoutId });
-          throw new Error(`Payment record not found for checkout ${checkoutId}`);
-        }
-
-        // ✅ STEP 2: Idempotency - check if already processed
-        if (payment.status === PaymentStatus.COMPLETED || payment.status === PaymentStatus.FAILED) {
-          console.log(`ℹ️ Payment already processed: ${payment.status}`);
-          return { status: 'already_processed', paymentStatus: payment.status };
-        }
-
-        // ✅ STEP 3: Verify callback result code
-        const resultCode = callbackData?.ResultCode;
-
-        if (resultCode !== 0) {
-          console.log(`❌ Payment declined/cancelled: ResultCode=${resultCode}`);
-
-          // Issue 3 Fix: write PaymentStatusUpdate alongside the status change
-          await updatePaymentStatusWithAudit(
-            prisma, payment.id,
-            payment.status, PaymentStatus.FAILED,
-            'callback_received_non_zero_result'
-          );
-
-          sendPaymentStatus(payment.transactionId, {
-            transactionId: payment.transactionId,
-            checkoutId,
-            status: 'failed',
-            resultCode,
-            message: 'Payment declined or cancelled'
-          });
-
-          logAudit('payment_failed', { checkoutId, resultCode });
-          return { status: 'failed', resultCode };
-        }
-
-        // ✅ STEP 4: Extract and verify amount
-        const callbackAmount = Number(
-          callbackData?.CallbackMetadata?.Item?.find(
-            (item) => item?.Name === 'Amount'
-          )?.Value
-        );
-
-        if (!callbackAmount || callbackAmount !== payment.amount) {
-          console.error(
-            `🔴 FRAUD: Amount mismatch. Payment=${payment.amount}, Callback=${callbackAmount}`
-          );
-
-          // Issue 3 Fix: write PaymentStatusUpdate alongside the status change
-          await updatePaymentStatusWithAudit(
-            prisma, payment.id,
-            payment.status, PaymentStatus.FRAUD_DETECTED,
-            'fraud_detected_amount_mismatch'
-          );
-
-          sendPaymentStatus(payment.transactionId, {
-            transactionId: payment.transactionId,
-            checkoutId,
-            status: 'failed',
-            error: 'Fraud detected: amount mismatch'
-          });
-
-          logAudit('fraud_detected_amount_mismatch', {
-            checkoutId,
-            expectedAmount: payment.amount,
-            callbackAmount,
-            phone: payment.phone
-          });
-
-          // Alert admin
-          console.error('🚨 SECURITY ALERT: Potential fraud attempt');
-
-          return { status: 'fraud_detected' };
-        }
-
-        // ✅ STEP 5: Verify with M-Pesa API
-        console.log(`🔍 Verifying payment with M-Pesa API...`);
-
-        const apiVerification = await verifyPaymentWithMpesa(checkoutId);
-
-        if (!apiVerification.verified) {
-          console.error(`❌ M-Pesa API verification failed:`, apiVerification.error);
-
-          // Issue 3 Fix: write PaymentStatusUpdate alongside the status change
-          await updatePaymentStatusWithAudit(
-            prisma, payment.id,
-            payment.status, PaymentStatus.VERIFICATION_FAILED,
-            'mpesa_api_verification_failed'
-          );
-
-          logAudit('payment_verification_failed', {
-            checkoutId,
-            error: apiVerification.error
-          });
-
-          // This is critical - payment may have failed at M-Pesa
-          throw new Error(`M-Pesa API verification failed: ${apiVerification.error}`);
-        }
-
-        // ✅ STEP 6: Atomically create session and update payment
-        const { getPackageByAmount } = require('../lib/packages');
-        const pkg = getPackageByAmount(payment.amount);
-
-        if (!pkg) {
-          console.error(`❌ Invalid package amount: ${payment.amount}`);
-          throw new Error(`Unknown package amount: ${payment.amount}`);
-        }
-        const { duration: expiryDuration, timeLabel } = pkg;
-
-        const { registerOrExtendMACSession } = require('../services/MACAddressService');
-        const mpesaReceipt = callbackData?.CallbackMetadata?.Item?.find(
-          (item) => item?.Name === 'MpesaReceiptNumber'
-        )?.Value;
-
-        let sessionResult;
-        try {
-          console.log('Beginning database transaction...');
-          sessionResult = await prisma.$transaction(async (tx) => {
-            const sessionDetails = await registerOrExtendMACSession(
-              {
-                mac: payment.macAddress,
-                phone: payment.phone,
-                ip: payment.ipAddress,
-                expiryDuration,
-                paymentId: payment.id,
-              },
-              tx // Pass the transaction client to the service
-            );
-
-            if (!sessionDetails.success) {
-              // This will cause the transaction to roll back
-              throw new Error(`Failed to register/extend session: ${sessionDetails.error}`);
-            }
-
-            // Mark payment as completed within the same transaction.
-            // BUG FIX (C-7):
-            //   mpesaRef was created with CheckoutRequestID — do NOT overwrite it.
-            //   mpesaReceipt is the Safaricom receipt number (e.g. QGH12345678).
-            //   completedAt was also never being set — fix that here too.
-            await tx.payment.update({
-              where: { id: payment.id },
-              data: {
-                status: PaymentStatus.COMPLETED,
-                mpesaReceipt: mpesaReceipt || null,  // Safaricom receipt → correct field
-                completedAt: new Date(),              // Record actual completion timestamp
-                expiresAt: sessionDetails.expiresAt,
-              },
-            });
-
-            // Issue 3 Fix: write PaymentStatusUpdate INSIDE the same transaction
-            // so status change + audit row are always atomically consistent.
-            await tx.paymentStatusUpdate.create({
-              data: {
-                paymentId: payment.id,
-                oldStatus: payment.status,
-                newStatus: PaymentStatus.COMPLETED,
-                reason: 'callback_received_successful',
-              },
-            });
-
-            console.log('✅ DB Transaction: Payment marked as completed and session created/extended.');
-            return sessionDetails;
-          });
-
-          // Issue 2 Fix: enqueue BullMQ session expiry job AFTER the transaction commits.
-          // Enqueueing inside the $transaction is a bug — if TX rolls back, the job fires
-          // for a session row that was never actually committed.
-          const sessionExpiryQueue = getSessionExpiryQueue();
-          if (sessionExpiryQueue && sessionResult.queueJob) {
-            const { action, jobId, sessionId, macAddress, delay } = sessionResult.queueJob;
-            if (action === 'reschedule') {
-              // Remove stale job first, then re-add
-              await sessionExpiryQueue.remove(jobId).catch(() => {});
-            }
-            await sessionExpiryQueue.add(
-              'expire-session',
-              { sessionId, macAddress },
-              {
-                delay,
-                jobId,
-                removeOnComplete: true,
-              }
-            );
-            console.log(`[Expiry Job] ${action === 'reschedule' ? 'Rescheduled' : 'Scheduled'} for session ${sessionId}`);
-          }
-
-          logAudit('payment_db_transaction_success', {
-            checkoutId,
-            phone: payment.phone,
-            amount: payment.amount,
-            mpesaReceipt,
-            sessionAction: sessionResult.action,
-          });
-
-        } catch (transactionError) {
-          console.error(`❌ Database transaction failed: ${transactionError.message}`);
-          logAudit('payment_db_transaction_failed', { checkoutId, error: transactionError.message });
-          // Re-throw to let BullMQ handle the retry
-          throw transactionError;
-        }
-
-        // ✅ STEP 7: Whitelist MAC address (External service call, outside of DB transaction)
-        console.log(`🔓 Whitelisting MAC on router: ${payment.macAddress}`);
-        const { whitelistMAC } = require('../config/mikrotik');
-        const mikrotikResult = await whitelistMAC(payment.macAddress, timeLabel, pkg);
-
-        if (!mikrotikResult.success) {
-          // The core payment is already committed. We just flag that this part failed.
-          console.error(`⚠️ MAC whitelist failed after successful payment: ${mikrotikResult.message}`);
-
-          // Issue 3 Fix: wrap in transaction so audit row is written atomically
-          await updatePaymentStatusWithAudit(
-            prisma, payment.id,
-            PaymentStatus.COMPLETED, PaymentStatus.COMPLETED_BUT_MAC_FAILED,
-            'mac_whitelist_failed_post_payment'
-          );
-
-          logAudit('payment_mac_whitelist_failed', {
-            checkoutId,
-            mac: payment.macAddress,
-            error: mikrotikResult.message
-          });
-          
-          // Enqueue a job to retry the whitelisting
-          const { getMacWhitelistRetryQueue } = require('../workers/timeoutWorkers');
-          const retryQueue = getMacWhitelistRetryQueue();
-          if (retryQueue) {
-            await retryQueue.add('retry-mac-whitelist', {
-              paymentId: payment.id,
-              timeLabel: timeLabel
-            }, {
-              attempts: 5, // Retry up to 5 times
-              backoff: {
-                type: 'exponential',
-                delay: 60000 // Start with a 1-minute delay
-              },
-              removeOnComplete: true,
-              jobId: `mac-retry-${payment.id}`
-            });
-            console.log(`🔁 Enqueued MAC whitelist retry job for payment ${payment.id}`);
-          }
-
-          // Alert admin - manual intervention needed if retries fail
-          console.error('🚨 ALERT: MAC whitelisting failed. Automatic retry scheduled.');
-
-          return {
-            status: 'completed_but_mac_failed',
-            message: mikrotikResult.message
-          };
-        }
-
-        console.log(`✅ MAC whitelisted successfully`);
-        logAudit('payment_mac_whitelist_success', { checkoutId, mac: payment.macAddress });
-
-        sendPaymentStatus(payment.transactionId, {
-          transactionId: payment.transactionId,
-          checkoutId,
-          status: 'completed',
-          phone: payment.phone,
-          amount: payment.amount,
-          expiresAt: sessionResult.expiresAt,
-          macAddress: payment.macAddress
-        });
-
-        return {
-          status: 'success',
-          checkoutId,
-          phone: payment.phone,
-          expiresAt: sessionResult.expiresAt
-        };
+        return await processPaymentJob(job.data);
       } catch (error) {
         console.error(`❌ Payment processing error: ${error.message}`);
-
-        logAudit('payment_processing_error', {
-          checkoutId: job.data.checkoutId,
-          error: error.message
-        });
-
-        // Re-throw to trigger retry
+        logAudit('payment_processing_error', { checkoutId, error: error.message });
+        // Re-throw to trigger BullMQ retry
         throw error;
       }
     },
