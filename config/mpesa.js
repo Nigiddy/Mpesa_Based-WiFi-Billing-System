@@ -1,6 +1,10 @@
 require("dotenv").config();
 const axios = require("axios");
 const moment = require("moment");
+// HIGH-2 FIX: Import the shared Redis client for cross-process token caching.
+// Token is stored in Redis so all PM2 cluster workers share the same cached
+// value instead of each making independent OAuth requests on expiry.
+const { getRedisClient } = require("./redis");
 
 // Note: Environment variable validation is now handled by config/secrets.js on startup
 const MPESA_ENV = process.env.MPESA_ENV || "sandbox"; // "sandbox" or "production"
@@ -11,53 +15,114 @@ const MPESA_BASE_URL =
 
 // ─── Token Cache ──────────────────────────────────────────────────────────────
 // Daraja access tokens are valid for ~3600 seconds (1 hour).
-// We cache and reuse the token, refreshing it 55 minutes after the last fetch
-// to avoid hitting the OAuth endpoint on every STK Push or query call.
-let _cachedToken = null;
-let _tokenExpiresAt = 0; // Unix ms timestamp after which the token must be refreshed
+// We cache and reuse the token, refreshing it 5 minutes before expiry.
+//
+// HIGH-2 FIX: Tokens are stored in Redis (key: mpesa:access_token, TTL: 55 min)
+// so all PM2 cluster processes share the same cached token. Falls back to the
+// in-memory singleton when Redis is unavailable.
+//
+// MED-3 FIX: _tokenFetchPromise is a mutex that ensures concurrent calls when
+// the token is expired all await the SAME fetch instead of each firing an
+// independent OAuth request to Safaricom (which could hit rate limits).
+const REDIS_TOKEN_KEY = 'mpesa:access_token';
+const TOKEN_TTL_SECONDS = 55 * 60; // 55 minutes
+const TOKEN_TTL_MS = TOKEN_TTL_SECONDS * 1000;
 
-const TOKEN_TTL_MS = 55 * 60 * 1000; // 55 minutes in milliseconds
+// In-memory fallback (used when Redis is unavailable)
+let _cachedToken = null;
+let _tokenExpiresAt = 0;
+
+// Mutex: if a fetch is in progress, any concurrent callers await this promise
+let _tokenFetchPromise = null;
 
 /**
  * Returns a valid Daraja API access token, using the cached value when possible.
- * Fetches a new token from Safaricom only when the cache is empty or expired.
+ * Redis is checked first (shared across cluster); falls back to in-memory cache.
+ * Only one concurrent OAuth request is made at a time (mutex via _tokenFetchPromise).
  * @returns {Promise<string|null>}
  */
 const getAccessToken = async () => {
-    // Return cached token if it is still valid
+    // ── 1. Redis cache lookup ───────────────────────────────────────────────
+    const redis = getRedisClient();
+    if (redis) {
+        try {
+            const cached = await redis.get(REDIS_TOKEN_KEY);
+            if (cached) {
+                console.log("🔑 Using Redis-cached MPesa access token");
+                return cached;
+            }
+        } catch (redisErr) {
+            // Redis read failure is non-fatal; fall through to in-memory cache
+            console.warn('⚠️ Redis token cache read failed, falling back to in-memory:', redisErr.message);
+        }
+    }
+
+    // ── 2. In-memory fallback cache ─────────────────────────────────────────
     if (_cachedToken && Date.now() < _tokenExpiresAt) {
-        console.log("🔑 Using cached MPesa access token");
+        console.log("🔑 Using in-memory cached MPesa access token");
         return _cachedToken;
     }
 
+    // ── 3. Mutex: prevent stampede ──────────────────────────────────────────
+    // If another concurrent call is already fetching a fresh token, await it
+    // instead of firing a second OAuth request.
+    if (_tokenFetchPromise) {
+        console.log("⏳ Awaiting in-flight MPesa token fetch...");
+        return _tokenFetchPromise;
+    }
+
+    // ── 4. Fetch a fresh token ──────────────────────────────────────────────
     console.log("🔄 Fetching fresh MPesa access token from Safaricom...");
     const auth = Buffer.from(
         `${process.env.MPESA_CONSUMER_KEY}:${process.env.MPESA_CONSUMER_SECRET}`
     ).toString("base64");
 
-    try {
-        const response = await axios.get(
-            `${MPESA_BASE_URL}/oauth/v1/generate?grant_type=client_credentials`,
-            { headers: { Authorization: `Basic ${auth}` } }
-        );
+    _tokenFetchPromise = (async () => {
+        try {
+            const response = await axios.get(
+                `${MPESA_BASE_URL}/oauth/v1/generate?grant_type=client_credentials`,
+                { headers: { Authorization: `Basic ${auth}` } }
+            );
 
-        _cachedToken = response.data.access_token;
-        _tokenExpiresAt = Date.now() + TOKEN_TTL_MS;
+            const token = response.data.access_token;
+            const expiresAt = Date.now() + TOKEN_TTL_MS;
 
-        console.log(
-            `✅ MPesa Access Token obtained. Cached until ${new Date(_tokenExpiresAt).toISOString()}`
-        );
-        return _cachedToken;
-    } catch (error) {
-        console.error(
-            "❌ MPesa Auth Error:",
-            error.response ? error.response.data : error.message
-        );
-        // Invalidate cache on error so the next call retries
-        _cachedToken = null;
-        _tokenExpiresAt = 0;
-        return null;
-    }
+            // Write to Redis (best-effort; don't fail the whole flow if Redis is down)
+            if (redis) {
+                try {
+                    await redis.set(REDIS_TOKEN_KEY, token, 'EX', TOKEN_TTL_SECONDS);
+                } catch (writeErr) {
+                    console.warn('⚠️ Redis token cache write failed (using in-memory only):', writeErr.message);
+                }
+            }
+
+            // Always update in-memory fallback
+            _cachedToken = token;
+            _tokenExpiresAt = expiresAt;
+
+            console.log(
+                `✅ MPesa Access Token obtained. Cached until ${new Date(expiresAt).toISOString()}`
+            );
+            return token;
+        } catch (error) {
+            console.error(
+                "❌ MPesa Auth Error:",
+                error.response ? error.response.data : error.message
+            );
+            // Invalidate both caches on error so the next call retries
+            _cachedToken = null;
+            _tokenExpiresAt = 0;
+            if (redis) {
+                await redis.del(REDIS_TOKEN_KEY).catch(() => {});
+            }
+            return null;
+        } finally {
+            // Release mutex — next call will go through the full fetch path if needed
+            _tokenFetchPromise = null;
+        }
+    })();
+
+    return _tokenFetchPromise;
 };
 
 // ─── STK Push ─────────────────────────────────────────────────────────────────

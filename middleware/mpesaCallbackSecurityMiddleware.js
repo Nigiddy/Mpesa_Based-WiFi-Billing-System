@@ -30,10 +30,22 @@ function isIpInRange(ip, cidr) {
         const [range, bits] = cidr.split('/');
         if (!range || !bits) return false;
 
-        const mask = ~((1 << (32 - parseInt(bits, 10))) - 1);
+        // HIGH-6 FIX: JavaScript's << operates on signed 32-bit integers.
+        // For IPs with the high bit set (≥ 128.0.0.0), left-shifting produces
+        // a negative value, which makes (ipLong & mask) === (rangeLong & mask)
+        // unreliable for Safaricom's 196.201.x.x ranges.
+        // Applying >>> 0 (unsigned right-shift by zero) after each accumulation
+        // re-interprets the bits as an unsigned 32-bit integer.
+        const ipToUint32 = (str) =>
+            str.split('.').reduce((acc, octet) => ((acc << 8) + parseInt(octet, 10)) >>> 0, 0);
 
-        const ipLong = ip.split('.').reduce((acc, octet) => (acc << 8) + parseInt(octet, 10), 0);
-        const rangeLong = range.split('.').reduce((acc, octet) => (acc << 8) + parseInt(octet, 10), 0);
+        const maskBits = parseInt(bits, 10);
+        // (~((1 << (32 - maskBits)) - 1)) >>> 0 produces a correct unsigned mask
+        // even for /0 and /32 edge cases.
+        const mask = maskBits === 0 ? 0 : (~((1 << (32 - maskBits)) - 1)) >>> 0;
+
+        const ipLong    = ipToUint32(ip);
+        const rangeLong = ipToUint32(range);
 
         return (ipLong & mask) === (rangeLong & mask);
     } catch (error) {

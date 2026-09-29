@@ -27,29 +27,33 @@ router.post(
   // in validateCallbackSecurityMiddleware and job idempotency via BullMQ jobId.
   validateCallbackSecurityMiddleware,
   async (req, res) => {
+    // CRIT-4 FIX: Validate callback structure BEFORE sending 200.
+    // Previously we sent 200 first, then silently discarded invalid payloads after the
+    // fact. A malformed-but-IP-whitelisted request would get 200 and no retries, making
+    // the discard completely invisible.
+    // Fix: validate first. If invalid, return 400 so Safaricom retries. Only once we
+    // know the structure is correct do we send 200 and hand off to async processing.
+    const structureValidation = validateCallbackStructure(req.body);
+    if (!structureValidation.valid) {
+      console.error("❌ Invalid callback structure:", structureValidation.errors);
+      logAudit('callback_invalid_structure', {
+        errors: structureValidation.errors,
+        ip: req.callbackSecurity.clientIP
+      });
+      // 400 causes Safaricom to retry — correct behaviour for a malformed payload.
+      return res.status(400).json({ success: false, error: 'Invalid callback structure' });
+    }
 
-    // Immediate acknowledgment to prevent M-Pesa retries
-    // We'll process asynchronously in background
+    // Extract validated fields (safe after structure check)
+    const callbackData = req.body.Body.stkCallback;
+    const checkoutId = callbackData.CheckoutRequestID;
+    console.log(`📥 Callback received: ${checkoutId}`);
+
+    // Immediate acknowledgment to prevent M-Pesa retries on valid callbacks.
+    // All further processing happens asynchronously below.
     res.status(200).json({ success: true });
 
     try {
-      // Extract callback data
-      const callbackData = req.body?.Body?.stkCallback;
-
-      // Validate structure
-      const structureValidation = validateCallbackStructure(req.body);
-      if (!structureValidation.valid) {
-        console.error("❌ Invalid callback structure:", structureValidation.errors);
-        logAudit('callback_invalid_structure', {
-          errors: structureValidation.errors,
-          ip: req.callbackSecurity.clientIP
-        });
-        return;
-      }
-
-      const checkoutId = callbackData.CheckoutRequestID;
-      console.log(`📥 Callback received: ${checkoutId}`);
-
       // Enqueue payment processing job
       // idempotency: jobId ensures only one job per checkoutId
       const queue = getPaymentQueue();
@@ -237,28 +241,30 @@ async function processPaymentJob({ checkoutId, callbackData, callbackSecurity })
 
   const apiVerification = await verifyPaymentWithMpesa(checkoutId);
 
+  // HIGH-3 FIX: On API verification failure, throw immediately WITHOUT marking the
+  // payment as VERIFICATION_FAILED. BullMQ will retry the job up to 3 times (with
+  // exponential backoff) giving the Safaricom query API time to catch up.
+  // Only after all retries are exhausted does the worker's 'failed' event handler
+  // mark the payment as VERIFICATION_FAILED and log a critical audit alert for
+  // manual review. This prevents falsely flagging the customer when the API lags.
   if (!apiVerification.verified) {
-    console.error(`❌ M-Pesa API verification failed:`, apiVerification.error);
-
-    // Issue 3 Fix: write PaymentStatusUpdate alongside the status change
-    await updatePaymentStatusWithAudit(
-      prisma, payment.id,
-      payment.status, PaymentStatus.VERIFICATION_FAILED,
-      'mpesa_api_verification_failed'
-    );
-
-    logAudit('payment_verification_failed', {
+    console.error(`❌ M-Pesa API verification failed (will retry): ${apiVerification.error || apiVerification.message}`);
+    logAudit('payment_verification_transient_failure', {
       checkoutId,
-      error: apiVerification.error
+      error: apiVerification.error,
+      resultCode: apiVerification.resultCode
     });
-
-    // This is critical - payment may have failed at M-Pesa
-    throw new Error(`M-Pesa API verification failed: ${apiVerification.error}`);
+    throw new Error(`M-Pesa API verification failed: ${apiVerification.error || apiVerification.message}`);
   }
 
-  // ✅ STEP 6: Atomically create session and update payment
-  const { getPackageByAmount } = require('../lib/packages');
-  const pkg = getPackageByAmount(payment.amount);
+  // HIGH-4 FIX: Prefer the planKey stored at payment initiation over amount-based
+  // lookup. Using getPackageByAmount() breaks if prices ever change — a KES 10 payment
+  // made yesterday would be looked up against the new price table today.
+  // Fall back to amount-based lookup only for rows created before the planKey migration.
+  const { getPackageByAmount, getPackageByPlanKey } = require('../lib/packages');
+  const pkg = payment.planKey
+    ? (getPackageByPlanKey(payment.planKey) || getPackageByAmount(payment.amount))
+    : getPackageByAmount(payment.amount);
 
   if (!pkg) {
     console.error(`❌ Invalid package amount: ${payment.amount}`);
@@ -291,20 +297,28 @@ async function processPaymentJob({ checkoutId, callbackData, callbackSecurity })
         throw new Error(`Failed to register/extend session: ${sessionDetails.error}`);
       }
 
-      // Mark payment as completed within the same transaction.
-      // BUG FIX (C-7):
-      //   mpesa_reference was created with CheckoutRequestID — do NOT overwrite it.
-      //   mpesa_receipt_number is the Safaricom receipt number (e.g. QGH12345678).
-      //   completedAt was also never being set — fix that here too.
-      await tx.payment.update({
-        where: { id: payment.id },
+      // CRIT-5 FIX: Use a conditional updateMany (WHERE status = PENDING) instead of
+      // a plain update. With concurrency: 5, two workers can both read status=PENDING
+      // and both pass the early-exit check at Step 2. The conditional update is an
+      // atomic MySQL test-and-set: only the FIRST worker gets count=1; the second
+      // gets count=0 and we throw a sentinel error to abort the transaction cleanly.
+      const claimed = await tx.payment.updateMany({
+        where: { id: payment.id, status: PaymentStatus.PENDING },
         data: {
           status: PaymentStatus.COMPLETED,
-          mpesa_receipt_number: mpesaReceipt || null,  // Safaricom receipt → correct field
-          completedAt: new Date(),              // Record actual completion timestamp
+          mpesa_receipt_number: mpesaReceipt || null,
+          completedAt: new Date(),
           expiresAt: sessionDetails.expiresAt,
         },
       });
+
+      if (claimed.count === 0) {
+        // Another concurrent worker already completed this payment.
+        // Use a sentinel so the outer catch can return gracefully without a BullMQ retry.
+        const sentinel = new Error('PAYMENT_ALREADY_COMPLETED');
+        sentinel.alreadyCompleted = true;
+        throw sentinel;
+      }
 
       // Issue 3 Fix: write PaymentStatusUpdate INSIDE the same transaction
       // so status change + audit row are always atomically consistent.
@@ -352,6 +366,13 @@ async function processPaymentJob({ checkoutId, callbackData, callbackSecurity })
     });
 
   } catch (transactionError) {
+    // CRIT-5 FIX: If another concurrent worker already completed this payment, the
+    // sentinel error signals a clean idempotent exit — not a real failure.
+    if (transactionError.alreadyCompleted) {
+      console.log(`ℹ️ Payment ${checkoutId} already completed by another worker. Skipping.`);
+      logAudit('payment_already_completed_concurrent', { checkoutId });
+      return { status: 'already_processed' };
+    }
     console.error(`❌ Database transaction failed: ${transactionError.message}`);
     logAudit('payment_db_transaction_failed', { checkoutId, error: transactionError.message });
     // Re-throw to let caller handle the retry
@@ -478,8 +499,34 @@ async function setupPaymentWorker() {
     console.log(`✅ Job completed: ${job.data.checkoutId}`);
   });
 
-  paymentWorker.on('failed', (job, error) => {
-    console.error(`❌ Job failed: ${job.data.checkoutId} - ${error.message}`);
+  // HIGH-3 FIX: On permanent failure (all BullMQ retries exhausted), if the payment
+  // is still PENDING/VERIFICATION_FAILED, mark it as VERIFICATION_FAILED and emit a
+  // critical audit alert for manual review. This defers the status write until we know
+  // all retries have genuinely failed rather than eagerly marking on the first attempt.
+  paymentWorker.on('failed', async (job, error) => {
+    const { checkoutId } = job.data;
+    console.error(`❌ Job permanently failed: ${checkoutId} - ${error.message}`);
+    // Only act on verification failures — other errors (DB, network) are already logged
+    if (error.message.startsWith('M-Pesa API verification failed')) {
+      try {
+        const payment = await prisma.payment.findUnique({ where: { mpesa_reference: checkoutId } });
+        if (payment && payment.status === PaymentStatus.PENDING) {
+          await updatePaymentStatusWithAudit(
+            prisma, payment.id,
+            payment.status, PaymentStatus.VERIFICATION_FAILED,
+            'mpesa_api_verification_failed_permanent'
+          );
+        }
+        logAudit('payment_verification_failed_permanent', {
+          checkoutId,
+          error: error.message,
+          action: 'MANUAL_REVIEW_REQUIRED'
+        });
+        console.error(`🚨 CRITICAL: Payment ${checkoutId} verification failed after all retries. MANUAL REVIEW REQUIRED.`);
+      } catch (auditErr) {
+        console.error(`❌ Failed to write verification_failed audit for ${checkoutId}:`, auditErr.message);
+      }
+    }
   });
 
   console.log('🚀 Payment worker started');
