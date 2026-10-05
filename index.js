@@ -70,6 +70,18 @@ const gracefulShutdown = async (signal) => {
 process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
 process.on("SIGINT",  () => gracefulShutdown("SIGINT"));
 
+// MED-2 FIX: Do NOT call gracefulShutdown on every unhandledRejection —
+// a single transient async error (e.g. a BullMQ Redis hiccup) would destroy
+// all in-flight payment jobs.
+//
+// Better pattern: track rejections in a rolling time window and only exit
+// when the count exceeds a configurable threshold (default: 5 within 60 s).
+// This preserves availability for isolated mistakes while still exiting on
+// genuine error storms.
+const REJECTION_THRESHOLD  = parseInt(process.env.UNHANDLED_REJECTION_THRESHOLD  || '5', 10);
+const REJECTION_WINDOW_MS  = parseInt(process.env.UNHANDLED_REJECTION_WINDOW_MS  || '60000', 10);
+let _rejectionTimestamps = [];
+
 process.on("unhandledRejection", (reason) => {
   console.error("🔴 Unhandled Promise Rejection:", reason);
   try {
@@ -79,7 +91,24 @@ process.on("unhandledRejection", (reason) => {
       stack: reason instanceof Error ? reason.stack : undefined,
     });
   } catch { /* logger not available yet */ }
-  gracefulShutdown("UNHANDLED_REJECTION");
+
+  // Slide the window: keep only timestamps within the rolling window
+  const now = Date.now();
+  _rejectionTimestamps = _rejectionTimestamps.filter(t => now - t < REJECTION_WINDOW_MS);
+  _rejectionTimestamps.push(now);
+
+  if (_rejectionTimestamps.length >= REJECTION_THRESHOLD) {
+    console.error(
+      `🔴 Unhandled rejection storm: ${_rejectionTimestamps.length} rejections ` +
+      `in ${REJECTION_WINDOW_MS / 1000}s — initiating graceful shutdown.`
+    );
+    gracefulShutdown("UNHANDLED_REJECTION_STORM");
+  } else {
+    console.warn(
+      `⚠️  Unhandled rejection #${_rejectionTimestamps.length} of ${REJECTION_THRESHOLD} ` +
+      `threshold (window: ${REJECTION_WINDOW_MS / 1000}s). Process continues.`
+    );
+  }
 });
 
 process.on("uncaughtException", (err) => {
@@ -191,7 +220,27 @@ app.use("/api/vouchers", voucherRoutes);
 // ✅ RFC 8910 Captive Portal API
 app.get("/api/v1/captive-portal", async (req, res) => {
   try {
-    const mac = (req.query.mac || req.ip || "").toUpperCase();
+    // MED-7 FIX: Validate the client-supplied MAC before using it.
+    // A client could pass any string as req.query.mac to probe other devices'
+    // session state or inject unexpected values into checkMACAlreadyActive().
+    // Accept only well-formed MAC addresses; fall back to req.ip when absent/invalid.
+    const MAC_REGEX = /^([0-9A-Fa-f]{2}[:\-]){5}[0-9A-Fa-f]{2}$/;
+    const rawMac = req.query.mac;
+
+    let mac = '';
+    if (rawMac) {
+      if (!MAC_REGEX.test(rawMac)) {
+        return res.status(400).json({
+          captive: true,
+          error: 'Invalid MAC address format'
+        });
+      }
+      mac = rawMac.toUpperCase();
+    } else {
+      // No MAC supplied — derive from IP (best-effort; may be a proxy IP).
+      mac = (req.ip || '').toUpperCase();
+    }
+
     let isAuthenticated = false;
 
     if (mac) {
@@ -214,6 +263,7 @@ app.get("/api/v1/captive-portal", async (req, res) => {
     res.status(500).json({ captive: true });
   }
 });
+
 
 // ✅ BOOT-4 FIX: Health Check — reuse the shared Redis client singleton instead
 // of creating a new ioredis instance (and TCP connection) on every request.

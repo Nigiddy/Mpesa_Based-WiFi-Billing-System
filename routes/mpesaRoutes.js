@@ -29,15 +29,21 @@ const router = express.Router();
  *   phone: string (254712345678 or 07123456678)
  *   amount: number (10, 15, 20, or 30)
  *   package: string ("1Hr", "4Hrs", "12Hrs", "24Hrs")
- *   macAddress: string (AA:BB:CC:DD:EE:FF)
+ *   macAddress: string (AA:BB:CC:DD:EE:FF)  ← body field name
  * }
+ *
+ * MED-6: validatePaymentInitiationMiddleware normalises `macAddress` from the
+ * body and sets it as `mac` (uppercased) on req.validatedPayment. Always
+ * destructure `mac` here — not `macAddress`.
  */
 router.post(
   "/payments/initiate",
   paymentLimiter,
   validatePaymentInitiationMiddleware,
   async (req, res) => {
+    // MED-6: `mac` = normalised MAC from validatedPayment (body field: macAddress)
     const { phone, mac, amount, package: pkg } = req.validatedPayment;
+
 
     // 🔒 CRITICAL FIX (Issue 1): The previous findFirst → check → create pattern
     // is a TOCTOU race condition. Two concurrent requests for the same phone both

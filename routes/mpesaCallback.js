@@ -173,7 +173,8 @@ async function processPaymentJob({ checkoutId, callbackData, callbackSecurity })
   }
 
   // ✅ STEP 3: Verify callback result code
-  const resultCode = callbackData?.ResultCode;
+  // MED-1 FIX: Safaricom may send ResultCode as a string; coerce to Number.
+  const resultCode = Number(callbackData?.ResultCode ?? -1);
 
   if (resultCode !== 0) {
     console.log(`❌ Payment declined/cancelled: ResultCode=${resultCode}`);
@@ -532,11 +533,18 @@ async function setupPaymentWorker() {
   console.log('🚀 Payment worker started');
 }
 
-// Initialize worker on module load (only if Redis is available)
-if (getPaymentQueue()) {
-  setupPaymentWorker().catch(error => {
-    console.warn('⚠️ Failed to initialize payment worker:', error.message);
-  });
-}
+// MED-5 FIX: Do NOT call getPaymentQueue() synchronously at module-load time.
+// At require() time, Redis may not yet be connected (index.js calls getRedisClient()
+// inside app.listen's callback, which fires after all routes are registered).
+// Deferring to setImmediate ensures this runs after the current tick — i.e. after
+// index.js has finished registering routes and started the server, by which point
+// the Redis singleton is initialised and getPaymentQueue() returns a real Queue.
+setImmediate(() => {
+  if (getPaymentQueue()) {
+    setupPaymentWorker().catch(error => {
+      console.warn('⚠️ Failed to initialize payment worker:', error.message);
+    });
+  }
+});
 
 module.exports = router;
