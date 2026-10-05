@@ -141,7 +141,7 @@ model supportrequest {
 // must ever exist. The DB @default(1) does NOT prevent a second row (id=2)
 // from being inserted. All code MUST use upsert({ where: { id: 1 } }).
 // Never call prisma.systemSettings.create() directly.
-model systemsettings {
+model SystemSettings {
   id                 Int      @id @default(1)
   networkName        String   @default("Qonnect")
   adminEmail         String   @default("admin@qonnect.com")
