@@ -133,8 +133,10 @@ function validateCallbackStructure(body) {
     errors.push('Missing ResultCode');
   }
 
+  // MED-1 FIX: Safaricom sometimes sends ResultCode as a string (e.g. "0").
+  // Coerce to Number before comparison so both Number(0) and String("0") pass.
   // If the transaction was successful, we must have the metadata
-  if (callback.ResultCode === 0) {
+  if (Number(callback.ResultCode) === 0) {
     const metadata = callback.CallbackMetadata?.Item;
     if (!metadata || !Array.isArray(metadata) || metadata.length === 0) {
       errors.push('Missing or invalid CallbackMetadata for successful payment');

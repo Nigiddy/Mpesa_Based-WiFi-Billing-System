@@ -52,23 +52,27 @@ const getAccessToken = async () => {
                 return cached;
             }
         } catch (redisErr) {
-            // Redis read failure is non-fatal; fall through to in-memory cache
-            console.warn('⚠️ Redis token cache read failed, falling back to in-memory:', redisErr.message);
+            // Redis read failure is non-fatal; fall through to mutex / in-memory
+            console.warn('⚠️ Redis token cache read failed, falling back:', redisErr.message);
         }
     }
 
-    // ── 2. In-memory fallback cache ─────────────────────────────────────────
-    if (_cachedToken && Date.now() < _tokenExpiresAt) {
-        console.log("🔑 Using in-memory cached MPesa access token");
-        return _cachedToken;
-    }
-
-    // ── 3. Mutex: prevent stampede ──────────────────────────────────────────
-    // If another concurrent call is already fetching a fresh token, await it
-    // instead of firing a second OAuth request.
+    // ── 2. Mutex check BEFORE in-memory lookup ──────────────────────────────
+    // MED-3 FIX: Check the mutex here — before the in-memory cache — so that
+    // concurrent callers that all miss Redis all join the SAME in-flight request
+    // rather than each independently observing a null in-memory token and
+    // starting their own fetch. Previously the mutex was checked after the
+    // memory check, leaving a window where the promise was null even though a
+    // fetch was in progress (cleared by `finally` before cache writes settled).
     if (_tokenFetchPromise) {
         console.log("⏳ Awaiting in-flight MPesa token fetch...");
         return _tokenFetchPromise;
+    }
+
+    // ── 3. In-memory fallback cache ─────────────────────────────────────────
+    if (_cachedToken && Date.now() < _tokenExpiresAt) {
+        console.log("🔑 Using in-memory cached MPesa access token");
+        return _cachedToken;
     }
 
     // ── 4. Fetch a fresh token ──────────────────────────────────────────────
@@ -117,7 +121,9 @@ const getAccessToken = async () => {
             }
             return null;
         } finally {
-            // Release mutex — next call will go through the full fetch path if needed
+            // MED-3 FIX: Release the mutex AFTER cache writes are done (above).
+            // The in-memory and Redis writes happen before this line, so any
+            // caller that arrives now will hit the cache first and skip the mutex.
             _tokenFetchPromise = null;
         }
     })();

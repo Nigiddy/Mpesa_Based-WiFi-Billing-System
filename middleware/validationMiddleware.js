@@ -10,11 +10,15 @@ const { validatePaymentInitiation, validateCallbackStructure } = require('../val
  */
 const validatePaymentInitiationMiddleware = (req, res, next) => {
   try {
+    // MED-6 NOTE: The client sends `macAddress` in the request body.
+    // validatePaymentInitiation() normalises and returns it as `mac` on
+    // req.validatedPayment — so route handlers destructure `mac`, not `macAddress`.
     const { phone, amount, macAddress, package: pkg } = req.body;
 
     if (!phone || !amount || !macAddress || !pkg) {
       return res.status(400).json({
         success: false,
+        // Error message uses the raw body field names so clients know what to fix.
         error: 'Missing required fields: phone, amount, macAddress, package'
       });
     }
@@ -34,7 +38,9 @@ const validatePaymentInitiationMiddleware = (req, res, next) => {
       });
     }
 
-    // Attach validated data to request for use in route handler
+    // Attach validated data to request for use in route handler.
+    // Note: validation.mac is the normalised (uppercased) MAC address —
+    // route handlers must destructure `mac`, NOT `macAddress`.
     req.validatedPayment = validation;
     next();
   } catch (error) {
