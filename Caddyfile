@@ -8,10 +8,61 @@
 #
 # Install: https://caddyserver.com/docs/install
 # Run: caddy run --config Caddyfile
+#
+# Architecture:
+#   Browser
+#     ↓ HTTPS / WSS (same origin: portal.yourdomain.com)
+#   Caddy
+#     ├── /api/*      → Node backend (Express, :5000)
+#     ├── /auth/*     → Node backend
+#     ├── /ws*        → Node backend (WebSocket, auto-upgraded by Caddy)
+#     ├── /mpesa/*    → Node backend (Safaricom callbacks)
+#     ├── /hotspot/*  → Node backend (captive portal static files)
+#     ├── /portal*    → Node backend (captive portal entry page)
+#     └── /*          → Next.js frontend (:3000)
+#
+# WebSocket note: Caddy's reverse_proxy directive automatically handles the
+# Upgrade: websocket / Connection: Upgrade handshake — no special config needed.
+# Because all paths share the same public domain, the browser sends the
+# HttpOnly admin_token cookie with the WebSocket upgrade request, satisfying
+# the JWT auth guard in services/websocket.js.
 
 portal.yourdomain.com {
-    # Proxy everything to the Node.js backend
-    reverse_proxy localhost:5000
+
+    # ── Node.js backend paths ────────────────────────────────────────────────
+
+    handle /api/* {
+        reverse_proxy localhost:5000
+    }
+
+    handle /auth/* {
+        reverse_proxy localhost:5000
+    }
+
+    # WebSocket upgrade paths — Caddy proxies Upgrade headers transparently
+    handle /ws* {
+        reverse_proxy localhost:5000
+    }
+
+    # M-Pesa STK-push callbacks from Safaricom
+    handle /mpesa/* {
+        reverse_proxy localhost:5000
+    }
+
+    # Captive portal static files and entry page
+    handle /hotspot/* {
+        reverse_proxy localhost:5000
+    }
+
+    handle /portal* {
+        reverse_proxy localhost:5000
+    }
+
+    # ── Next.js frontend (everything else) ───────────────────────────────────
+
+    handle {
+        reverse_proxy localhost:3000
+    }
 
     # Pass real client IP to Express (required for trust proxy + ARP lookups)
     header_up X-Real-IP {remote_host}
@@ -30,3 +81,4 @@ portal.yourdomain.com {
 
 # (Optional) Redirect bare HTTP on port 80 to HTTPS — Caddy does this
 # automatically for HTTPS sites, so no explicit block is needed.
+
