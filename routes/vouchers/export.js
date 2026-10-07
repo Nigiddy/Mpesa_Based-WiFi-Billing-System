@@ -16,9 +16,15 @@ const router = express.Router();
 
 router.get('/export/csv', authMiddleware, async (req, res) => {
   try {
-    const vouchers = await prisma.voucher.findMany({
+    const rawVouchers = await prisma.voucher.findMany({
       orderBy: { createdAt: 'desc' },
-      include: { redemptions: { select: { macAddress: true, redeemedAt: true } } },
+      include: { voucherredemption: { select: { macAddress: true, redeemedAt: true } } },
+    });
+
+    // Map Prisma's relation name → 'redemptions' for downstream usage
+    const vouchers = rawVouchers.map((v) => {
+      const { voucherredemption, ...rest } = v;
+      return { ...rest, redemptions: voucherredemption };
     });
 
     const HEADER = [

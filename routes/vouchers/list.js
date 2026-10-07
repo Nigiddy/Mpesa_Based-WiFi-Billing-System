@@ -45,7 +45,7 @@ router.get('/', authMiddleware, async (req, res) => {
         skip,
         take: limit,
         include: {
-          redemptions: {
+          voucherredemption: {
             select: { id: true, macAddress: true, ipAddress: true, redeemedAt: true },
           },
         },
@@ -53,7 +53,12 @@ router.get('/', authMiddleware, async (req, res) => {
       prisma.voucher.count(),
     ]);
 
-    const enriched = vouchers.map((v) => ({ ...v, status: deriveVoucherStatus(v) }));
+    // Map Prisma's relation name (voucherredemption) → API field (redemptions)
+    // so the frontend contract stays unchanged.
+    const enriched = vouchers.map((v) => {
+      const { voucherredemption, ...rest } = v;
+      return { ...rest, redemptions: voucherredemption, status: deriveVoucherStatus(v) };
+    });
     const filtered = statusFilter ? enriched.filter((v) => v.status === statusFilter) : enriched;
 
     return res.json(serializeBigInts({
