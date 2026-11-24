@@ -31,15 +31,20 @@ const targets = [
 // Defaulting the guard to "production-unless-explicitly-set-to-development"
 // makes the app safe even before the .env is fully configured.
 if (process.env.NODE_ENV === 'development') {
-  targets.push({
-    level: 'info',
-    target: 'pino-pretty', // Makes logs human-readable in development
-    options: {
-      colorize: true,
-      translateTime: 'SYS:standard',
-      ignore: 'pid,hostname'
-    }
-  });
+  try {
+    require.resolve('pino-pretty');
+    targets.push({
+      level: 'info',
+      target: 'pino-pretty', // Makes logs human-readable in development
+      options: {
+        colorize: true,
+        translateTime: 'SYS:standard',
+        ignore: 'pid,hostname'
+      }
+    });
+  } catch {
+    // pino-pretty not installed in production/pruned image — skip transport gracefully
+  }
 }
 
 const transport = pino.transport({ targets });
