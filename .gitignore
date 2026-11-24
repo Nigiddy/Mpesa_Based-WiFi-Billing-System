@@ -8,6 +8,10 @@ yarn-error.log
 .env.docker
 .env*.local
 
+# Database backups
+backups/
+*.sql
+
 # Logs
 logs/
 *.log
