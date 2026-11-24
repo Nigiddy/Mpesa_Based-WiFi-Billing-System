@@ -1,0 +1,27 @@
+# Ignore dependencies and artifacts from host
+node_modules
+npm-debug.log
+yarn-error.log
+
+# Version control
+.git
+.gitignore
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Logs and local builds
+logs
+*.log
+frontend
+.next
+dist
+build
+coverage
+
+# Documentation and editor files
+*.md
+.vscode
+.idea
