@@ -5,6 +5,8 @@ yarn-error.log
 
 # Environment variables
 .env
+.env.docker
+.env*.local
 
 # Logs
 logs/
@@ -29,4 +31,6 @@ Thumbs.db
 
 # Tasks
 FRONTEND_AUDIT_REPORT.md
+dockerIntegration.md
+
 
