@@ -1,16 +1,13 @@
-"use client"
+import type { Metadata } from 'next'
+import { adminMetadata } from '@/lib/metadata'
+import { AdminLayoutClient } from '@/components/admin/AdminLayoutClient'
 
-import { AuthProvider } from "@/hooks/use-auth"
-import { RequireAdmin } from "@/components/admin/RequireAdmin"
+export const metadata: Metadata = adminMetadata
 
 export default function AdminLayout({
   children,
 }: {
   children: React.ReactNode
 }) {
-  return (
-    <AuthProvider>
-      <RequireAdmin>{children}</RequireAdmin>
-    </AuthProvider>
-  )
+  return <AdminLayoutClient>{children}</AdminLayoutClient>
 }

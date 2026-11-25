@@ -9,17 +9,23 @@ type TitleOrFactory = string | (() => string)
 export function useDynamicTitle(explicitTitle?: TitleOrFactory) {
   const pathname = usePathname()
 
-  // Default route-based titles
+  // Default route-based titles aligned with SEO metadata structure
   const routeTitle = useMemo(() => {
-    if (!pathname) return `Loading... - ${PROJECT_NAME}`
-    if (typeof explicitTitle === "string") return `${explicitTitle} - ${PROJECT_NAME}`
-    if (typeof explicitTitle === "function") return `${explicitTitle()} - ${PROJECT_NAME}`
+    if (!pathname) return `${PROJECT_NAME} | Fast & Affordable Internet`
+    
+    let titleStr = typeof explicitTitle === "function" ? explicitTitle() : explicitTitle
 
-    if (pathname === "/") return `Home - ${PROJECT_NAME}`
-    if (pathname.startsWith("/about")) return `About Us - ${PROJECT_NAME}`
-    if (pathname.startsWith("/admin")) return `Admin - ${PROJECT_NAME}`
-    if (pathname.startsWith("/support")) return `Support - ${PROJECT_NAME}`
-    if (pathname.startsWith("/packages")) return `Packages - ${PROJECT_NAME}`
+    if (titleStr) {
+      if (titleStr.includes(PROJECT_NAME) || titleStr.includes("Qonnect") || titleStr.includes("KIBARUANI")) {
+        return titleStr
+      }
+      return `${titleStr} | ${PROJECT_NAME}`
+    }
+
+    if (pathname === "/") return `${PROJECT_NAME} | Instant High-Speed WiFi Packages in Kenya`
+    if (pathname.startsWith("/about")) return `About Us | ${PROJECT_NAME}`
+    if (pathname.startsWith("/admin")) return `Admin Portal | ${PROJECT_NAME}`
+    if (pathname.startsWith("/support")) return `Support & FAQs | ${PROJECT_NAME}`
 
     return `${PROJECT_NAME}`
   }, [pathname, explicitTitle])
