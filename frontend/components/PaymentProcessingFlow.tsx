@@ -501,10 +501,10 @@ function SuccessView({
 
       <Summary
         rows={[
-          reference && { label: mpesaRef ? 'M-Pesa receipt' : 'Reference', value: <CopyValue value={reference} />, mono: true },
+          reference ? { label: mpesaRef ? 'M-Pesa receipt' : 'Reference', value: <CopyValue value={reference} />, mono: true } : null,
           { label: 'Plan', value: plan },
           { label: 'Paid', value: amount },
-          wifiPassword && { label: 'WiFi password', value: <CopyValue value={wifiPassword} />, mono: true },
+          wifiPassword ? { label: 'WiFi password', value: <CopyValue value={wifiPassword} />, mono: true } : null,
         ]}
       />
 
