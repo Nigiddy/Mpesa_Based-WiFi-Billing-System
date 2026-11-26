@@ -408,6 +408,10 @@ class ApiClient {
   }
 
   // System APIs
+  async getOverview(range: "today" | "week" = "today"): Promise<ApiResponse<any>> {
+    return this.request(`/api/admin/overview?range=${range}`)
+  }
+
   async getSystemStats(): Promise<ApiResponse<SystemStats>> {
     const resp = await this.request<any>("/api/admin/summary")
     if (!resp.success || !resp.data) {
@@ -551,6 +555,18 @@ export class WebSocketClient {
     )
   }
 
+  isOpen(): boolean {
+    return this.ws !== null && this.ws.readyState === WebSocket.OPEN
+  }
+
+  private emitConnectionChange(connected: boolean) {
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(
+        new CustomEvent('ws_connection_change', { detail: { connected } }),
+      )
+    }
+  }
+
   connect(transactionId?: string) {
     // Guard: do not create a second socket if one is already live or connecting.
     if (this.isConnected()) return
@@ -568,6 +584,7 @@ export class WebSocketClient {
 
       this.ws.onopen = () => {
         this.reconnectAttempts = 0
+        this.emitConnectionChange(true)
       }
 
       this.ws.onmessage = (event) => {
@@ -580,6 +597,7 @@ export class WebSocketClient {
       }
 
       this.ws.onclose = () => {
+        this.emitConnectionChange(false)
         // Only auto-reconnect if the socket was not closed intentionally
         // (intentional disconnect sets this.ws to null first).
         if (this.ws !== null) {
@@ -592,6 +610,7 @@ export class WebSocketClient {
       }
     } catch {
       this.ws = null
+      this.emitConnectionChange(false)
     }
   }
 

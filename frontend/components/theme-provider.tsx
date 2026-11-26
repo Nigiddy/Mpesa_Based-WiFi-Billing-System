@@ -23,26 +23,49 @@ interface ThemeProviderProps {
   children: ReactNode
 }
 
+function applyThemeToDocument(next: Theme) {
+  const root = document.documentElement
+  root.classList.remove("light", "dark")
+  root.classList.add(next)
+  root.style.colorScheme = next
+}
+
 export function ThemeProvider({ children }: ThemeProviderProps) {
-  const [theme, setTheme] = useState<Theme>("dark")
+  const [theme, setTheme] = useState<Theme>("light")
 
   useEffect(() => {
-    const savedTheme = localStorage.getItem("theme") as Theme
-    if (savedTheme) {
-      setTheme(savedTheme)
-    } else if (window.matchMedia("(prefers-color-scheme: light)").matches) {
-      setTheme("light")
+    const saved = localStorage.getItem("theme")
+    const initial: Theme =
+      saved === "light" || saved === "dark"
+        ? saved
+        : window.matchMedia("(prefers-color-scheme: dark)").matches
+          ? "dark"
+          : "light"
+
+    setTheme(initial)
+    applyThemeToDocument(initial)
+
+    const mq = window.matchMedia("(prefers-color-scheme: dark)")
+    const handleSystemChange = (e: MediaQueryListEvent) => {
+      const stored = localStorage.getItem("theme")
+      if (stored !== "light" && stored !== "dark") {
+        const next: Theme = e.matches ? "dark" : "light"
+        setTheme(next)
+        applyThemeToDocument(next)
+      }
     }
+
+    mq.addEventListener("change", handleSystemChange)
+    return () => mq.removeEventListener("change", handleSystemChange)
   }, [])
 
-  useEffect(() => {
-    document.documentElement.classList.remove("light", "dark")
-    document.documentElement.classList.add(theme)
-    localStorage.setItem("theme", theme)
-  }, [theme])
-
   const toggleTheme = () => {
-    setTheme((prev) => (prev === "light" ? "dark" : "light"))
+    setTheme((prev) => {
+      const next: Theme = prev === "light" ? "dark" : "light"
+      applyThemeToDocument(next)
+      localStorage.setItem("theme", next)
+      return next
+    })
   }
 
   return (
