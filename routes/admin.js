@@ -7,6 +7,7 @@ const { disconnectAllUsers, disconnectByMac, getActiveDevices, getStatus } = req
 const { csrfProtection, generateCsrfToken } = require("../middleware/csrfMiddleware");
 const { logAudit } = require("../utils/auditLogger");
 const { apiLimiter } = require("../middleware/rateLimit");
+const { getAdminOverviewData } = require("../utils/adminOverview");
 
 // ── Security: enum allow-lists for Prisma status filters ──────────────────────
 // Validated against prisma/schema.prisma enums. Only values in this list are
@@ -75,6 +76,18 @@ router.get("/admin/payments", authMiddleware, async (req, res) => {
   } catch (err) {
     console.error("Database error:", err);
     res.status(500).json({ success: false, error: "Database error" });
+  }
+});
+
+// ✅ Admin Overview Aggregate Endpoint (Protected)
+router.get("/admin/overview", authMiddleware, async (req, res) => {
+  try {
+    const range = req.query.range === "week" ? "week" : "today";
+    const overview = await getAdminOverviewData(range);
+    res.json({ success: true, data: overview });
+  } catch (err) {
+    console.error("Overview aggregation error:", err);
+    res.status(500).json({ success: false, error: "Failed to load overview" });
   }
 });
 

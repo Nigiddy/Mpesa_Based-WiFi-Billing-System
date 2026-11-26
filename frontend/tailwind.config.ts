@@ -10,9 +10,15 @@ const config: Config = {
   ],
   theme: {
     extend: {
+      fontFamily: {
+        sans: ['var(--font-geist-sans)', 'system-ui', '-apple-system', 'Segoe UI', 'Arial', 'sans-serif'],
+        mono: ['var(--font-geist-mono)', 'ui-monospace', 'SFMono-Regular', 'Consolas', 'monospace'],
+      },
       colors: {
         background: 'hsl(var(--background))',
         foreground: 'hsl(var(--foreground))',
+        surface: 'hsl(var(--surface))',
+        'surface-2': 'hsl(var(--surface-2))',
         card: {
           DEFAULT: 'hsl(var(--card))',
           foreground: 'hsl(var(--card-foreground))'
@@ -31,25 +37,39 @@ const config: Config = {
         },
         success: {
           DEFAULT: 'hsl(var(--success))',
-          foreground: 'hsl(var(--success-foreground))'
+          foreground: 'hsl(var(--success-foreground))',
+          soft: 'var(--success-soft)'
         },
         warning: {
           DEFAULT: 'hsl(var(--warning))',
-          foreground: 'hsl(var(--warning-foreground))'
+          foreground: 'hsl(var(--warning-foreground))',
+          soft: 'var(--warning-soft)'
+        },
+        danger: {
+          DEFAULT: 'hsl(var(--danger))',
+          foreground: 'hsl(var(--danger-foreground))',
+          soft: 'var(--danger-soft)'
         },
         muted: {
           DEFAULT: 'hsl(var(--muted))',
           foreground: 'hsl(var(--muted-foreground))'
         },
+        faint: {
+          DEFAULT: 'hsl(var(--faint-foreground))',
+          foreground: 'hsl(var(--faint-foreground))'
+        },
         accent: {
           DEFAULT: 'hsl(var(--accent))',
-          foreground: 'hsl(var(--accent-foreground))'
+          foreground: 'hsl(var(--accent-foreground))',
+          soft: 'var(--accent-soft)'
         },
         destructive: {
           DEFAULT: 'hsl(var(--destructive))',
           foreground: 'hsl(var(--destructive-foreground))'
         },
         border: 'hsl(var(--border))',
+        hairline: 'var(--border-hairline)',
+        'border-strong': 'var(--border-strong)',
         input: 'hsl(var(--input))',
         ring: 'hsl(var(--ring))',
         chart: {
