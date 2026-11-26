@@ -1,51 +1,44 @@
 "use client"
 
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Label } from "@/components/ui/label"
-import { Button } from "@/components/ui/button"
-import { Settings } from "lucide-react"
-import { SystemSettings } from "@/lib/api"
+import { Switch } from "@/components/ui/switch"
+import type { SystemSettings } from "@/lib/api"
+import { SettingRow, SettingsSection } from "../admin-ui"
 
 interface SystemControlProps {
-    settings: SystemSettings
-    onUpdate: (key: keyof SystemSettings, value: any) => void
-    onSave: () => void
-    saving: boolean
+  settings: SystemSettings
+  onUpdate: <K extends keyof SystemSettings>(key: K, value: SystemSettings[K]) => void
+  /** Maintenance mode as last saved, so the row can say when a change is still waiting for Save */
+  savedMaintenance?: boolean
 }
 
-export const SystemControl = ({ settings, onUpdate, onSave, saving }: SystemControlProps) => {
-    return (
-        <Card className="bg-white/50 dark:bg-slate-800/50 border-slate-200 dark:border-white/10">
-            <CardHeader>
-                <CardTitle className="text-slate-900 dark:text-white flex items-center">
-                    <Settings className="h-5 w-5 mr-2" />
-                    System Control
-                </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-                <div className="flex items-center justify-between">
-                    <div>
-                        <Label className="text-slate-700 dark:text-slate-300">Maintenance Mode</Label>
-                        <p className="text-sm text-slate-500 dark:text-slate-400">Disable new connections</p>
-                    </div>
-                    <Button
-                        variant={settings.maintenanceMode ? "destructive" : "outline"}
-                        size="sm"
-                        onClick={() => onUpdate("maintenanceMode", !settings.maintenanceMode)}
-                    >
-                        {settings.maintenanceMode ? "Active" : "Inactive"}
-                    </Button>
-                </div>
-                <div className="pt-4 border-t border-slate-200 dark:border-white/10">
-                    <Button
-                        className="w-full bg-primary hover:bg-primary/90 text-primary-foreground"
-                        onClick={onSave}
-                        disabled={saving}
-                    >
-                        {saving ? "Saving..." : "Save Settings"}
-                    </Button>
-                </div>
-            </CardContent>
-        </Card>
-    )
+/** Maintenance mode. Saved with the rest of the page by the save bar. */
+export const SystemControl = ({ settings, onUpdate, savedMaintenance }: SystemControlProps) => {
+  const on = Boolean(settings.maintenanceMode)
+  const waitingForSave = savedMaintenance !== undefined && on !== Boolean(savedMaintenance)
+
+  return (
+    <SettingsSection id="maintenance" title="Maintenance" description="Pause new connections while you work on the network.">
+      <SettingRow
+        htmlFor="maintenance-mode"
+        label="Maintenance mode"
+        description={
+          <>
+            Stops new customers from connecting. People already online aren&rsquo;t affected.
+            {waitingForSave && (
+              <span className="mt-1 block font-medium text-foreground">{on ? "Turns on" : "Turns off"} when you save.</span>
+            )}
+          </>
+        }
+      >
+        <Switch
+          id="maintenance-mode"
+          checked={on}
+          onCheckedChange={(checked) => onUpdate("maintenanceMode", checked)}
+          aria-describedby="maintenance-mode-desc"
+          // Amber when on, because it affects customers
+          className="data-[state=checked]:bg-[hsl(var(--warning))]"
+        />
+      </SettingRow>
+    </SettingsSection>
+  )
 }

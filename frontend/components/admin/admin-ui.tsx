@@ -7,7 +7,7 @@
  */
 
 import { useEffect, useState, type HTMLAttributes, type ReactNode } from "react"
-import { AlertCircle, Check, ChevronLeft, ChevronRight, Copy, type LucideIcon } from "lucide-react"
+import { AlertCircle, AlertTriangle, Check, ChevronLeft, ChevronRight, Copy, type LucideIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { cn } from "@/lib/utils"
@@ -267,6 +267,154 @@ export function ErrorState({ title, message, onRetry }: { title: string; message
       <Button variant="outline" size="sm" className="mt-5" onClick={onRetry}>
         Try again
       </Button>
+    </div>
+  )
+}
+
+/* ------------------------------------------------------------------ */
+/* Settings                                                             */
+/* ------------------------------------------------------------------ */
+
+/** A titled group of setting rows. tone="danger" for actions that can't be undone. */
+export function SettingsSection({
+  id, title, description, tone, children,
+}: { id: string; title: string; description?: ReactNode; tone?: "danger"; children: ReactNode }) {
+  return (
+    <Panel aria-labelledby={`${id}-title`} className={cn(tone === "danger" && "border-[hsl(var(--danger)/0.35)]")}>
+      <header className="border-b border-border px-4 py-4 sm:px-5">
+        <h2 id={`${id}-title`} className="text-[15.5px] font-semibold tracking-tight text-foreground">{title}</h2>
+        {description && <p className="mt-0.5 text-[13px] leading-relaxed text-muted-foreground">{description}</p>}
+      </header>
+      <div className="divide-y divide-border">{children}</div>
+    </Panel>
+  )
+}
+
+/**
+ * One setting: label and description on the left, control on the right.
+ * Pass htmlFor to link the label to its control; the description gets the id `${htmlFor}-desc`.
+ * stack puts the control under the text on phones (for wide buttons).
+ */
+export function SettingRow({
+  label, description, htmlFor, stack, children,
+}: { label: string; description?: ReactNode; htmlFor?: string; stack?: boolean; children: ReactNode }) {
+  const descId = htmlFor ? `${htmlFor}-desc` : undefined
+  return (
+    <div
+      className={cn(
+        "flex gap-4 px-4 py-4 sm:px-5",
+        stack ? "flex-col sm:flex-row sm:items-center sm:justify-between sm:gap-6" : "items-center justify-between"
+      )}
+    >
+      <div className="min-w-0">
+        {htmlFor ? (
+          <label htmlFor={htmlFor} className="text-sm font-medium text-foreground">{label}</label>
+        ) : (
+          <p className="text-sm font-medium text-foreground">{label}</p>
+        )}
+        {description && <div id={descId} className="mt-0.5 text-[13px] leading-relaxed text-muted-foreground">{description}</div>}
+      </div>
+      <div className="shrink-0">{children}</div>
+    </div>
+  )
+}
+
+/**
+ * Whole-number setting with a unit, e.g. "180 seconds".
+ * Only valid values reach onChange, so the page can never save an empty field or NaN.
+ * A text input (not type="number") so scrolling over it can't change the value by accident.
+ * If the admin leaves the field invalid, it goes back to the last valid value.
+ */
+export function NumberField({
+  id, value, onChange, min, max, unit, describedBy,
+}: {
+  id: string
+  value: number
+  onChange: (value: number) => void
+  min: number
+  max: number
+  unit?: string
+  describedBy?: string
+}) {
+  const show = (v: number) => (Number.isFinite(v) ? String(v) : "")
+  const [text, setText] = useState(() => show(value))
+  const [error, setError] = useState<string | null>(null)
+
+  // Follow outside changes (Discard, a fresh load), but don't rewrite what's being typed
+  useEffect(() => {
+    setText((t) => (t.trim() !== "" && Number(t) === value ? t : show(value)))
+    setError(null)
+  }, [value])
+
+  const validate = (t: string) => {
+    const s = t.trim()
+    if (s === "") return "Enter a number."
+    const n = Number(s)
+    if (!Number.isInteger(n)) return "Use a whole number."
+    if (n < min || n > max) return `Use ${min.toLocaleString("en-US")} to ${max.toLocaleString("en-US")}.`
+    return null
+  }
+
+  const errorId = `${id}-error`
+  return (
+    <div className="flex flex-col items-end gap-1">
+      <div
+        className={cn(
+          "flex h-10 w-[9.5rem] items-center overflow-hidden rounded-[10px] border bg-card transition-[border-color,box-shadow]",
+          "focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-0",
+          error ? "border-[hsl(var(--danger))] focus-within:ring-[hsl(var(--danger)/0.3)]" : "border-input"
+        )}
+      >
+        <input
+          id={id}
+          type="text"
+          inputMode="numeric"
+          autoComplete="off"
+          value={text}
+          onChange={(e) => {
+            const t = e.target.value.replace(/[^\d]/g, "")
+            setText(t)
+            const err = validate(t)
+            setError(err)
+            if (!err && Number(t) !== value) onChange(Number(t))
+          }}
+          onBlur={() => {
+            if (error) {
+              setText(show(value))
+              setError(null)
+            }
+          }}
+          aria-invalid={error ? true : undefined}
+          aria-describedby={[describedBy, error ? errorId : null].filter(Boolean).join(" ") || undefined}
+          // 16px on phones stops iOS zooming in
+          className="h-full min-w-0 flex-1 bg-transparent px-3 text-right text-base font-medium tabular-nums text-foreground outline-none sm:text-sm"
+        />
+        {unit && <span className="pr-3 text-[13px] text-muted-foreground">{unit}</span>}
+      </div>
+      {error && (
+        <p id={errorId} role="alert" className="max-w-[12rem] text-right text-[12px] leading-snug text-[hsl(var(--danger))]">
+          {error}
+        </p>
+      )}
+    </div>
+  )
+}
+
+/** Page-level warning banner, e.g. "Maintenance mode is on" */
+export function Notice({ title, children, action }: { title: string; children?: ReactNode; action?: ReactNode }) {
+  return (
+    <div
+      role="status"
+      className="flex flex-col gap-3 rounded-2xl border border-[hsl(var(--warning)/0.3)] bg-[var(--warning-soft)] px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between sm:px-5"
+    >
+      <div className="flex min-w-0 gap-3">
+        <AlertTriangle className="mt-0.5 h-[18px] w-[18px] shrink-0 text-[hsl(var(--warning))]" aria-hidden />
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-foreground">{title}</p>
+          {children && <p className="mt-0.5 text-[13px] leading-relaxed text-muted-foreground">{children}</p>}
+        </div>
+      </div>
+      {action && <div className="shrink-0 pl-[30px] sm:pl-0">{action}</div>}
     </div>
   )
 }
