@@ -1,209 +1,230 @@
 "use client"
 
-import { useState, useEffect, useCallback, useMemo } from "react"
-import { Ticket, Plus, Download, RefreshCw, Copy, Check, Filter } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { apiClient, type Voucher } from "@/lib/api"
-import { LABELS } from "@/lib/constants/labels"
-import { MESSAGES } from "@/lib/constants/messages"
+import { useCallback, useEffect, useRef, useState } from "react"
+import { Download, Plus, RefreshCw, Ticket } from "lucide-react"
 import { toast } from "sonner"
+import { Button } from "@/components/ui/button"
+import { apiClient, type Voucher } from "@/lib/api"
+import { MESSAGES } from "@/lib/constants/messages"
+import { cn } from "@/lib/utils"
 import { GenerateDialog } from "./vouchers/GenerateDialog"
 import { VoucherRow } from "./vouchers/VoucherRow"
+import { EmptyState, ErrorState, FAINT, FilterChips, ListSkeleton, PageHeader, Pagination, Panel } from "./admin-ui"
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+/* ------------------------------------------------------------------ */
+/* Config                                                               */
+/* ------------------------------------------------------------------ */
+
+const PAGE_SIZE = 50
 
 type VoucherStatus = "all" | "unused" | "active" | "fully_used" | "expired"
+type Counts = Partial<Record<VoucherStatus, number>>
+const STATUSES = ["unused", "active", "fully_used", "expired"] as const
 
-// ─── Main Component ───────────────────────────────────────────────────────────
+const FILTERS: Array<{ value: VoucherStatus; label: string }> = [
+  { value: "all", label: "All" },
+  { value: "unused", label: "Unused" },
+  { value: "active", label: "Active" },
+  { value: "fully_used", label: "Used" },
+  { value: "expired", label: "Expired" },
+]
+
+const COLUMNS = ["Code", "Plan", "Uses", "Status", "Expires", "Created"]
+
+const EMPTY_FILTER_TEXT: Record<Exclude<VoucherStatus, "all">, string> = {
+  unused: "Every voucher has been used or has expired. Generate a new batch to hand out.",
+  active: "No vouchers are in use right now.",
+  fully_used: "No vouchers have been used up yet.",
+  expired: "No vouchers have expired.",
+}
+
+/* ------------------------------------------------------------------ */
+/* Page                                                                 */
+/* ------------------------------------------------------------------ */
 
 export default function VoucherManagement() {
-  const [vouchers, setVouchers]       = useState<Voucher[]>([])
-  const [total, setTotal]             = useState(0)
-  const [page, setPage]               = useState(1)
-  const [totalPages, setTotalPages]   = useState(1)
+  const [vouchers, setVouchers] = useState<Voucher[]>([])
+  const [total, setTotal] = useState(0)
+  const [totalPages, setTotalPages] = useState(1)
+  const [page, setPage] = useState(1)
   const [statusFilter, setStatusFilter] = useState<VoucherStatus>("all")
-  const [loading, setLoading]         = useState(false)
+  const [counts, setCounts] = useState<Counts>({})
+  const [loading, setLoading] = useState(true)
+  const [loaded, setLoaded] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [refreshKey, setRefreshKey] = useState(0)
   const [showGenerate, setShowGenerate] = useState(false)
 
+  const requestId = useRef(0)
+
   const fetchVouchers = useCallback(async () => {
+    const id = ++requestId.current
     setLoading(true)
     try {
-      const params = {
+      const res = await apiClient.getVouchers({
         page,
-        limit: 50,
-        ...(statusFilter !== "all" ? { status: statusFilter as Exclude<VoucherStatus, "all"> } : {}),
-      }
-      const res = await apiClient.getVouchers(params)
-      if (res.success && res.data) {
-        setVouchers(res.data.vouchers)
-        setTotal(res.data.total)
-        setTotalPages(res.data.totalPages)
+        limit: PAGE_SIZE,
+        ...(statusFilter !== "all" ? { status: statusFilter } : {}),
+      })
+      if (id !== requestId.current) return // a newer request has started; ignore this answer
+      if (!res.success || !res.data) throw new Error(res.error || MESSAGES.ERRORS.FETCH_VOUCHERS)
+
+      const data = res.data
+      setVouchers(data.vouchers)
+      setTotal(data.total)
+      setTotalPages(Math.max(1, data.totalPages || 1))
+      setError(null)
+      setLoaded(true)
+
+      /*
+       * Chip counts are shown only when they're accurate:
+       * 1. The API returns `counts` for every status (best; see the note to the backend).
+       * 2. Otherwise, on "All" with a single page, count the rows we have.
+       * 3. Otherwise, the filtered total is the exact count for that one status.
+       */
+      const fromApi = (data as { counts?: Counts }).counts
+      if (fromApi) {
+        setCounts({ ...fromApi, all: fromApi.all ?? STATUSES.reduce((sum, s) => sum + (fromApi[s] ?? 0), 0) })
+      } else if (statusFilter === "all" && data.totalPages <= 1) {
+        const by = (s: (typeof STATUSES)[number]) => data.vouchers.filter((v) => v.status === s).length
+        setCounts({ all: data.total, unused: by("unused"), active: by("active"), fully_used: by("fully_used"), expired: by("expired") })
       } else {
-        toast.error(res.error || MESSAGES.ERRORS.FETCH_VOUCHERS)
+        setCounts((c) => ({ ...c, [statusFilter]: data.total }))
       }
-    } catch (err) {
-      toast.error(MESSAGES.ERRORS.FETCH_VOUCHERS)
+    } catch (err: unknown) {
+      if (id !== requestId.current) return
+      setError(err instanceof Error ? err.message : MESSAGES.ERRORS.FETCH_VOUCHERS)
     } finally {
-      setLoading(false)
+      if (id === requestId.current) setLoading(false)
     }
   }, [page, statusFilter])
 
   useEffect(() => {
-    let cancelled = false
-    fetchVouchers().catch(() => {
-      if (!cancelled) toast.error(MESSAGES.ERRORS.FETCH_VOUCHERS)
-    })
-    return () => { cancelled = true }
-  }, [fetchVouchers])
+    fetchVouchers()
+  }, [fetchVouchers, refreshKey])
 
-  // Summary counts — memoised so the four filter passes only rerun when
-  // vouchers changes. Note: these reflect the current page only; for accurate
-  // totals across all pages a dedicated backend aggregate endpoint is needed.
-  const counts = useMemo(() => ({
-    unused:     vouchers.filter((v) => v.status === "unused").length,
-    active:     vouchers.filter((v) => v.status === "active").length,
-    fully_used: vouchers.filter((v) => v.status === "fully_used").length,
-    expired:    vouchers.filter((v) => v.status === "expired").length,
-  }), [vouchers])
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages)
+  }, [page, totalPages])
 
-  const FILTERS: { value: VoucherStatus; label: string }[] = [
-    { value: "all",        label: "All" },
-    { value: "unused",     label: "Unused" },
-    { value: "active",     label: "Active" },
-    { value: "fully_used", label: "Used" },
-    { value: "expired",    label: "Expired" },
-  ]
+  const refresh = () => setRefreshKey((k) => k + 1)
+
+  const changeFilter = (value: VoucherStatus) => {
+    setStatusFilter(value)
+    setPage(1)
+  }
+
+  // New vouchers are unused: show them on page 1, and recount from fresh data
+  const handleGenerated = (created: Voucher[]) => {
+    setCounts({})
+    setPage(1)
+    setStatusFilter((f) => (f === "all" ? f : "unused"))
+    refresh()
+    if (created.length) toast.success(`${created.length} voucher${created.length === 1 ? "" : "s"} generated`)
+  }
+
+  const allCount = counts.all ?? (statusFilter === "all" && loaded ? total : undefined)
+  const description =
+    allCount === undefined
+      ? "Prepaid codes customers can enter instead of paying."
+      : `${allCount.toLocaleString("en-US")} voucher${allCount === 1 ? "" : "s"}${
+          counts.unused !== undefined ? ` · ${counts.unused.toLocaleString("en-US")} unused` : ""
+        }`
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-xl font-semibold text-foreground flex items-center gap-2">
-            <Ticket className="w-5 h-5 text-primary" /> Voucher Management
-          </h2>
-          <p className="text-sm text-muted-foreground mt-0.5">
-            {total} voucher{total !== 1 ? "s" : ""} total
-          </p>
+    <div className="space-y-5">
+      <PageHeader
+        title="Vouchers"
+        description={description}
+        actions={
+          <>
+            <Button variant="outline" size="icon" onClick={refresh} disabled={loading} aria-label="Refresh vouchers">
+              <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} aria-hidden />
+            </Button>
+            <Button variant="outline" className="gap-2" onClick={() => apiClient.exportVouchersCSV()}>
+              <Download className="h-4 w-4" aria-hidden />
+              Export CSV
+            </Button>
+            <Button className="gap-2" onClick={() => setShowGenerate(true)}>
+              <Plus className="h-4 w-4" aria-hidden />
+              Generate vouchers
+            </Button>
+          </>
+        }
+      />
+
+      <Panel aria-label="Vouchers">
+        <div className="border-b border-border p-4 sm:p-5">
+          <FilterChips
+            label="Filter by status"
+            options={FILTERS.map((f) => ({ ...f, count: f.value === "all" ? allCount ?? null : counts[f.value] ?? null }))}
+            value={statusFilter}
+            onChange={changeFilter}
+          />
         </div>
-        <div className="flex gap-2 flex-wrap">
-          <Button variant="outline" size="sm" onClick={fetchVouchers} disabled={loading} className="gap-1.5">
-            <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} /> Refresh
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => apiClient.exportVouchersCSV()} className="gap-1.5">
-            <Download className="w-3.5 h-3.5" /> Export CSV
-          </Button>
-          <Button size="sm" onClick={() => setShowGenerate(true)} className="gap-1.5">
-            <Plus className="w-3.5 h-3.5" /> Generate
-          </Button>
-        </div>
-      </div>
 
-      {/* Summary cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        {[
-          { label: "Unused",  value: counts.unused,     color: "text-primary" },
-          { label: "Active",  value: counts.active,     color: "text-success" },
-          { label: "Used",    value: counts.fully_used, color: "text-muted-foreground" },
-          { label: "Expired", value: counts.expired,    color: "text-destructive" },
-        ].map((s) => (
-          <div key={s.label} className="bg-card border border-border/50 rounded-xl p-4">
-            <p className="text-xs text-muted-foreground mb-1">{s.label}</p>
-            <p className={`text-2xl font-bold ${s.color}`}>{s.value}</p>
-          </div>
-        ))}
-      </div>
-
-      {/* Filter bar */}
-      <div className="flex items-center gap-1 bg-muted/30 rounded-lg p-1 w-fit">
-        <Filter className="w-3.5 h-3.5 text-muted-foreground ml-2" />
-        {FILTERS.map((f) => (
-          <button
-            key={f.value}
-            onClick={() => { setStatusFilter(f.value); setPage(1) }}
-            className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-              statusFilter === f.value
-                ? "bg-primary text-primary-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            {f.label}
-          </button>
-        ))}
-      </div>
-
-      {/* Table */}
-      <Card className="border-border/50 shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-border/60 bg-muted/20">
-                {["Code", "Plan", "Uses", "Status", "Expires", "Created"].map((h) => (
-                  <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                    {h}
-                  </th>
+        {error ? (
+          <ErrorState title="Couldn't load vouchers." message={error} onRetry={refresh} />
+        ) : !loaded ? (
+          <ListSkeleton rows={8} columns={6} />
+        ) : vouchers.length === 0 ? (
+          statusFilter === "all" ? (
+            <EmptyState
+              icon={Ticket}
+              title="No vouchers yet"
+              action={
+                <Button className="gap-2" onClick={() => setShowGenerate(true)}>
+                  <Plus className="h-4 w-4" aria-hidden />
+                  Generate vouchers
+                </Button>
+              }
+            >
+              Generate a batch to sell at the counter or give away. Customers enter the code on the portal to get online.
+            </EmptyState>
+          ) : (
+            <EmptyState
+              icon={Ticket}
+              title={`No ${FILTERS.find((f) => f.value === statusFilter)?.label.toLowerCase()} vouchers`}
+              action={<Button variant="outline" size="sm" onClick={() => changeFilter("all")}>Show all vouchers</Button>}
+            >
+              {EMPTY_FILTER_TEXT[statusFilter]}
+            </EmptyState>
+          )
+        ) : (
+          <div aria-busy={loading} className={cn("overflow-x-auto transition-opacity duration-150", loading && "opacity-60")}>
+            <table className="w-full text-[13.5px]">
+              <thead>
+                <tr className="border-b border-border">
+                  {COLUMNS.map((h) => (
+                    <th key={h} scope="col" className={cn("h-10 whitespace-nowrap px-4 text-left text-xs font-medium", FAINT)}>
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="[&>tr:last-child]:border-b-0 [&>tr]:border-b [&>tr]:border-border">
+                {vouchers.map((v) => (
+                  <VoucherRow key={v.id} v={v} />
                 ))}
-              </tr>
-            </thead>
-            <tbody>
-              {loading && vouchers.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="px-4 py-12 text-center text-sm text-muted-foreground">
-                    Loading…
-                  </td>
-                </tr>
-              ) : vouchers.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="px-4 py-12 text-center text-sm text-muted-foreground">
-                    No vouchers found. Generate some to get started.
-                  </td>
-                </tr>
-              ) : (
-                vouchers.map((v) => <VoucherRow key={v.id} v={v} />)
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Pagination */}
-        {totalPages > 1 && (
-          <div className="flex items-center justify-between px-4 py-3 border-t border-border/40">
-            <span className="text-xs text-muted-foreground">
-              Page {page} of {totalPages}
-            </span>
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={page <= 1 || loading}
-                onClick={() => setPage((p) => p - 1)}
-              >
-                Previous
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={page >= totalPages || loading}
-                onClick={() => setPage((p) => p + 1)}
-              >
-                Next
-              </Button>
-            </div>
+              </tbody>
+            </table>
           </div>
         )}
-      </Card>
 
-      {/* Generate Dialog */}
-      {showGenerate && (
-        <GenerateDialog
-          onClose={() => setShowGenerate(false)}
-          onGenerated={(newVouchers) => {
-            setVouchers((prev) => [...newVouchers, ...prev])
-            setTotal((t) => t + newVouchers.length)
-          }}
-        />
-      )}
+        {loaded && !error && vouchers.length > 0 && (
+          <Pagination
+            page={page}
+            totalPages={totalPages}
+            total={total}
+            pageSize={PAGE_SIZE}
+            noun={{ one: "voucher", many: "vouchers" }}
+            onPageChange={setPage}
+            disabled={loading}
+          />
+        )}
+      </Panel>
+
+      {showGenerate && <GenerateDialog onClose={() => setShowGenerate(false)} onGenerated={handleGenerated} />}
     </div>
   )
 }

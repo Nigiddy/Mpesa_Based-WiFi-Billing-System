@@ -116,7 +116,8 @@ export default function UserPortal() {
       <div className="flex min-h-[calc(100dvh-4rem)] items-center justify-center bg-background px-4 py-12">
         <PaymentProcessingFlow
           stage={paymentStage}
-          amount={amount}
+          // The plan's price, not its id, so the screens show the amount actually charged
+          amount={selected?.price ?? toNumber(amount)}
           phone={`254${phone.substring(1)}`}
           package={selected?.pkg.label || "WiFi package"}
           duration={selected?.pkg.label || "Selected package"}
@@ -124,8 +125,10 @@ export default function UserPortal() {
           mpesaRef={paymentData?.mpesaRef}
           expiresAt={paymentData?.expiresAt || undefined}
           onRetry={retryPayment}
+          onResend={retryPayment}
           onCancel={cancelPayment}
-          onTimeout={cancelPayment}
+          // No onTimeout: the flow shows its own "prompt expired" screen, and the hook keeps
+          // waiting, so a late approval still connects the customer.
         />
       </div>
     )
@@ -249,7 +252,7 @@ export default function UserPortal() {
                     <span className="flex flex-wrap items-center gap-2 text-[15px] font-semibold text-foreground">
                       {pkg.label}
                       {best && (
-                        <span className="whitespace-nowrap rounded-full bg-emerald-600/10 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 dark:bg-emerald-400/10 dark:text-emerald-400">
+                        <span className="whitespace-nowrap rounded-full bg-[var(--success-soft)] px-2 py-0.5 text-[11px] font-semibold text-[hsl(var(--success))]">
                           Best value
                         </span>
                       )}
@@ -293,7 +296,7 @@ export default function UserPortal() {
             <Check
               aria-hidden
               className={cn(
-                "pointer-events-none absolute right-3.5 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-emerald-600 transition-[opacity,transform] duration-200 dark:text-emerald-400",
+                "pointer-events-none absolute right-3.5 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-[hsl(var(--success))] transition-[opacity,transform] duration-200",
                 phoneOk ? "scale-100 opacity-100" : "scale-75 opacity-0"
               )}
             />
